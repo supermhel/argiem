@@ -78,11 +78,48 @@
 <script>
 // ---- data access: live API if configured, else mock --------------------
 const INVENTORY_API = window.INVENTORY_API || null; // e.g. "http://localhost:8000"
+// DX4: alerts are LIVE by default, fetched same-origin from the nginx reverse
+// proxy (/api/alerts -> OpenSearch alerts-*/_search). Override with
+// window.ALERTS_API = null to force mock-only.
+const ALERTS_API = (window.ALERTS_API !== undefined) ? window.ALERTS_API : "/api/alerts";
+let LIVE = false; // true once live alerts are successfully loaded
+
 async function getAssets(){
   if(INVENTORY_API){ try{ return await (await fetch(INVENTORY_API+"/assets?limit=200")).json(); }catch(e){} }
   return window.SIEM_MOCK.assets;
 }
-function getAlerts(){ return window.SIEM_MOCK.alerts; }
+
+// Fetch REAL alerts from OpenSearch (via same-origin proxy). Maps _search hits to
+// the dashboard's alert shape and filters out ai.results docs (they lack a
+// rule_title/score). Falls back to mock data if the proxy is unreachable.
+async function getAlerts(){
+  if(ALERTS_API){
+    try{
+      const r = await fetch(ALERTS_API, {headers:{Accept:"application/json"}});
+      if(r.ok){
+        const data = await r.json();
+        const hits = (((data||{}).hits||{}).hits)||[];
+        const alerts = hits.map(h=>h._source)
+          // keep only real rule alerts; drop ai.results (no rule_title/score).
+          .filter(s=>s && s.rule_title)
+          .map(s=>({
+            alert_id: s.alert_id,
+            time: s.time,
+            rule_title: s.rule_title,
+            level: s.level,
+            score: s.score,
+            sector: s.sector,
+            src_endpoint: s.src_endpoint||{},
+            actor: s.actor||{}
+          }));
+        LIVE = true;
+        return alerts;
+      }
+    }catch(e){ /* fall through to mock */ }
+  }
+  LIVE = false;
+  return window.SIEM_MOCK.alerts;
+}
 function getSources(){ return window.SIEM_MOCK.sources; }
 const lvl = s => ({critical:"crit",high:"high",medium:"med",low:"low"}[s]||"low");
 

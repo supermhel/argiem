@@ -10,6 +10,53 @@ piece without rewriting the others.
 
 ---
 
+## Demo
+
+See ARGUS turn a real SSH brute-force burst into a real alert — **with zero
+infrastructure** (no Docker, no Redis, no OpenSearch):
+
+<!-- Demo cast coming soon. Record it with: asciinema rec --command "bash tools/demo.sh" argus-demo.cast
+     then: asciinema upload argus-demo.cast  — paste the returned id below and uncomment.
+[![asciicast](https://asciinema.org/a/PLACEHOLDER.svg)](https://asciinema.org/a/PLACEHOLDER)
+-->
+
+The cast above runs [`tools/demo.sh`](tools/demo.sh): it feeds 10 failed SSH logins
+from one IP through the whole pipeline (normalize → detect → triage → index),
+shows the brute-force **alert** come out, and replays the event to prove the alert
+is **idempotent** (deduped, not duplicated).
+
+**Recording the cast** is a manual, one-time step for a maintainer —
+[asciinema](https://asciinema.org/) records a real interactive terminal, so it
+can't be produced by CI or an automated agent. Run these in a real terminal:
+
+```sh
+asciinema rec --command "bash tools/demo.sh" argus-demo.cast
+asciinema upload argus-demo.cast   # prints the asciinema.org URL + id
+```
+
+Then replace `PLACEHOLDER` above with the id from the upload URL.
+
+### Try it yourself
+
+```sh
+# Zero-infra: SSH brute-force -> real alert, idempotent under replay (no Docker).
+make e2e                                  # runs demo_e2e.py (fast, no narration)
+bash tools/demo.sh                        # same test with banner + story narration
+#                                         #  Windows: powershell -File tools\demo.ps1
+
+# Full live stack (collect -> normalize -> detect -> index -> dashboard):
+make up                                   # docker compose up -d
+# ...then open the ARGUS alert console at:
+#   http://localhost:8080
+make down                                 # stop the stack and remove volumes
+```
+
+> First time on the live stack? Run `make preflight` first — it checks
+> `vm.max_map_count`, Docker RAM, and free ports, and prints the exact fix for
+> anything missing. See [Pre-flight](#️-pre-flight--read-this-before-you-start-the-stack).
+
+---
+
 ## What's real in v0.1
 
 ARGUS v0.1 ships a **working detection pipeline**. We are deliberate about what is

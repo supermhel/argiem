@@ -6,6 +6,21 @@ on:
   pull_request:
 
 jobs:
+  # Secret-scanning gate: fail the build if any credential/secret is committed.
+  # Uses the official gitleaks action. Public OSS repo => no GITLEAKS_LICENSE needed.
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks can scan all commits, not just the tip.
+          fetch-depth: 0
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          # Lets the action post a summary / comment on pull requests.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # Zero-infra gate: contract tests + runner/window/evaluator + both e2e on the memory bus.
   contract-tests:
     runs-on: ubuntu-latest

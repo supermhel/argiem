@@ -1,5 +1,11 @@
 FROM nginx:alpine
+# Static single-file dashboard.
 COPY services/ws7-dashboard /usr/share/nginx/html
+# Reverse-proxy config: serves the static files AND proxies /api/alerts to
+# OpenSearch (same-origin -> no CORS). Lives outside the html root so it is not
+# also served as a static file.
+RUN rm -f /usr/share/nginx/html/nginx.conf /usr/share/nginx/html/Dockerfile
+COPY services/ws7-dashboard/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
-# Static single-file dashboard. Set window.INVENTORY_API in index.html (or via a
-# small env-substituted config) to point at the live WS-6 service.
+# DX4: alerts come LIVE from /api/alerts (proxied to OpenSearch). Inventory is
+# fetched from WS-6 via window.INVENTORY_API. Both fall back to mocks/mock_data.js.
