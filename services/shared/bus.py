@@ -82,9 +82,20 @@ class _RedisBus:
         claim_pending(). Returns (the iterator ends) on the first empty read so
         the runner can re-enter the loop and interleave claim_pending().
         """
+        import redis  # cached import; needed for redis.exceptions below
         self._ensure_group(topic, group)
         consumer = self._consumer_name(group)
-        resp = self.r.xreadgroup(group, consumer, {topic: ">"}, count=10, block=block_ms)
+        try:
+            resp = self.r.xreadgroup(group, consumer, {topic: ">"}, count=10,
+                                     block=block_ms)
+        except redis.exceptions.TimeoutError:
+            # A blocking XREADGROUP can race its own socket read-timeout against the
+            # BLOCK window (redis-py raises before the empty-result comes back). An
+            # expired block with nothing new == an empty read, so return cleanly and
+            # let the runner re-enter + interleave claim_pending() instead of logging
+            # a traceback every few seconds. Genuine ConnectionErrors are NOT caught
+            # here -> they still surface via the runner's handler.
+            return
         if not resp:
             return
         for _stream, entries in resp:
