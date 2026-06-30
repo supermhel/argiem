@@ -61,16 +61,14 @@ def run(bus, worker: "AiWorker") -> dict:
 
 def main():
     # Daemon (T0): consume ai.requests via the shared runner. run() above stays the
-    # batch path used by tests / the e2e harness. v0.1 ships the passthrough/stub LLM;
-    # real local-Ollama triage lands in v0.2.
+    # batch path used by tests / the e2e harness. Real local-Ollama triage runs when
+    # OLLAMA_URL is set and reachable; otherwise the deterministic StubLLM is used.
     from shared.runner import serve  # noqa: E402
     from shared.log import get_logger  # noqa: E402
 
     worker = AiWorker()
-    mode = "ollama" if os.getenv("OLLAMA_URL") else "passthrough-stub"
-    get_logger("ws5-ai").info(
-        "ai triage mode", mode=mode,
-        note=("real local-LLM triage lands in v0.2" if mode == "passthrough-stub" else ""))
+    mode = type(worker.llm).__name__
+    get_logger("ws5-ai").info("ai triage mode", mode=mode)
 
     def handler(payload: dict) -> None:
         bus = Bus()

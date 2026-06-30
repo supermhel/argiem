@@ -15,9 +15,12 @@ Supported rule shape (subset of Sigma, per sigma-convention.md):
       window_seconds: <int>    # optional -> stateful
       threshold: <int>         # optional -> stateful
       group_by: <ocsf.path>    # optional, defaults to src_endpoint.ip
+      distinct_field: <ocsf.path>  # optional -> distinct-count instead of count
 
 Stateful rules only "fire" once the count of matching events for a group reaches
-`threshold` within `window_seconds`.
+`threshold` within `window_seconds`. When `distinct_field` is set, the rule counts
+DISTINCT values of that field per group (e.g. distinct dst ports for a port scan, or
+distinct dst hosts for lateral movement) rather than the raw number of events.
 """
 from __future__ import annotations
 
@@ -53,6 +56,10 @@ class Rule:
         self.window_seconds = siem.get("window_seconds")
         self.threshold = siem.get("threshold")
         self.group_by = siem.get("group_by", "src_endpoint.ip")
+        # Optional: count DISTINCT values of this OCSF field per group instead of a
+        # raw event count (port scan -> distinct dst ports; lateral movement ->
+        # distinct dst hosts). None => plain count (brute-force, mass-delete).
+        self.distinct_field = siem.get("distinct_field")
         self.stateful = self.window_seconds is not None and self.threshold is not None
         # Sliding-window counter (T6). Defaults to an in-process deque (correct for a
         # single replica / tests). main() swaps in a RedisWindowCounter when running
@@ -112,8 +119,13 @@ class Rule:
         member = (event.get("siem") or {}).get("ingest_id") or str(now)
         # Namespace the window by rule id so two rules grouping on the same field
         # don't share a counter. The counter returns the in-window count after add.
-        count = self._counter.hit(f"{self.id}:{group}", now,
-                                  self.window_seconds * 1000, member)
+        window_ms = self.window_seconds * 1000
+        if self.distinct_field:
+            value = get_path(event, self.distinct_field)
+            count = self._counter.hit_distinct(f"{self.id}:{group}", now,
+                                               window_ms, value, member)
+        else:
+            count = self._counter.hit(f"{self.id}:{group}", now, window_ms, member)
         return count >= self.threshold
 
 

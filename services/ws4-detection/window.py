@@ -11,11 +11,35 @@ A stateful rule fires when the count of matching events for a group reaches
   brute-force alert would never fire under horizontal scaling. (This was the T6
   finding from the Opus review.)
 
-Both expose the same method::
+Both expose the same methods::
 
-    hit(key, now_ms, window_ms, member) -> int   # count in [now-window, now] after add
+    hit(key, now_ms, window_ms, member) -> int
+        # COUNT of events in [now-window, now] after add (brute-force, mass-delete)
 
-The engine calls it and compares the returned count to the rule's threshold.
+    hit_distinct(key, now_ms, window_ms, value, member) -> int
+        # DISTINCT-COUNT of `value` seen in [now-window, now] after add
+        # (port scan = distinct dst ports; lateral movement = distinct dst hosts)
+
+The engine calls one of them and compares the returned count to the rule's threshold.
+
+Distinct-count design
+---------------------
+A plain COUNT can't express "one IP touched many *different* ports": 30 connections
+to a single port must NOT trip a port-scan rule, but 15 connections to 15 different
+ports must. So distinct-count keys the window on the *field value* (port / host),
+not on the event, and reports how many distinct values are alive in the window.
+
+The two backends stay consistent the same way the COUNT pair does:
+
+- ``DequeWindowCounter`` keeps ``(now_ms, value)`` tuples per group; after trimming
+  by the horizon it returns ``len({value for _, value in window})``. Re-seeing a
+  value just appends a fresher tuple, so an actively-recurring value never ages out
+  while it keeps appearing.
+- ``RedisWindowCounter`` stores the *value itself* as the sorted-set member, scored
+  by time. ZADD on an already-present value updates its score (refreshes its
+  recency) instead of adding a row, so the set naturally holds one entry per distinct
+  value; ZREMRANGEBYSCORE ages values out and ZCARD is the distinct count. This is
+  exactly the COUNT path with member := value, which is why both backends agree.
 """
 from __future__ import annotations
 
@@ -27,6 +51,7 @@ class DequeWindowCounter:
 
     def __init__(self) -> None:
         self._w: dict[str, deque] = defaultdict(deque)
+        self._dw: dict[str, deque] = defaultdict(deque)
 
     def hit(self, key: str, now_ms: int, window_ms: int, member=None) -> int:
         w = self._w[key]
@@ -35,6 +60,16 @@ class DequeWindowCounter:
         while w and w[0] < horizon:
             w.popleft()
         return len(w)
+
+    def hit_distinct(self, key: str, now_ms: int, window_ms: int,
+                     value=None, member=None) -> int:
+        """Distinct-count of ``value`` within the window after recording it."""
+        w = self._dw[key]
+        w.append((now_ms, value))
+        horizon = now_ms - window_ms
+        while w and w[0][0] < horizon:
+            w.popleft()
+        return len({v for _, v in w})
 
 
 class RedisWindowCounter:
@@ -65,3 +100,23 @@ class RedisWindowCounter:
         pipe.expire(zkey, max(1, window_ms // 1000 + 1))
         res = pipe.execute()
         return int(res[2])  # ZCARD result
+
+    def hit_distinct(self, key: str, now_ms: int, window_ms: int,
+                     value=None, member=None) -> int:
+        """Distinct-count of ``value`` in-window (global, across replicas).
+
+        The sorted-set member is the *value* itself, so re-seeing the same value
+        only refreshes its score (ZADD updates), keeping one entry per distinct
+        value. ZCARD is then the distinct count. ``member`` is ignored on purpose:
+        deduplication here is by value, not by event id.
+        """
+        zkey = f"{self.ns}:d:{key}"
+        m = str(value) if value is not None else str(now_ms)
+        horizon = now_ms - window_ms
+        pipe = self.r.pipeline()
+        pipe.zadd(zkey, {m: now_ms})
+        pipe.zremrangebyscore(zkey, 0, horizon - 1)
+        pipe.zcard(zkey)
+        pipe.expire(zkey, max(1, window_ms // 1000 + 1))
+        res = pipe.execute()
+        return int(res[2])

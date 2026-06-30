@@ -28,6 +28,20 @@ echo
 echo "== ws4 boolean evaluator + alert id (T4/T7) =="
 $PY services/ws4-detection/test_engine_boolean.py || fail=1
 echo
+echo "== ws4 distinct-count window + port-scan/lateral-movement rules (v0.2) =="
+$PY services/ws4-detection/test_window_distinct.py || fail=1
+$PY services/ws4-detection/test_engine_distinct_rules.py || fail=1
+echo
+echo "== ws2 parsers: generic syslog + windows event log (v0.2) =="
+$PY services/ws2-normalization/parsers/test_generic_syslog.py || fail=1
+$PY services/ws2-normalization/parsers/test_windows_eventlog.py || fail=1
+echo
+echo "== ws5 ollama adapter + fallback (v0.2) =="
+$PY services/ws5-ai/test_llm_adapter.py || fail=1
+echo
+echo "== ws1 syslog UDP listener (v0.2) =="
+$PY services/ws1-collectors/test_syslog_udp.py || fail=1
+echo
 echo "== integration e2e (WS-1->2->4->3) =="
 $PY tools/integration_e2e.py || fail=1
 echo

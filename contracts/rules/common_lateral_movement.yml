@@ -1,0 +1,27 @@
+title: Lateral movement (one account auth success to many distinct hosts)
+id: 2e3d4c5b-6f70-4819-9b02-1c2d3e4f5061
+status: stable
+description: >
+  One account successfully authenticating to 5+ DISTINCT destination hosts within
+  300 seconds. Targets OCSF Authentication (class 3002, activity 1 Logon) with
+  status Success. Distinct-count on dst_endpoint.ip catches an attacker reusing
+  valid credentials to hop across hosts.
+level: high
+logsource:
+  category: authentication
+detection:
+  auth_success:
+    class_uid: 3002
+    activity_id: 1
+    status: Success
+  condition: auth_success
+fields:
+  - actor.user.name
+  - dst_endpoint.ip
+siem:
+  sector: common
+  score_weight: 65
+  window_seconds: 300
+  threshold: 5
+  group_by: actor.user.name
+  distinct_field: dst_endpoint.ip

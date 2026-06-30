@@ -1,0 +1,131 @@
+"""End-to-end-ish tests for the distinct-count rules (port scan, lateral movement).
+
+Loads the REAL rule YAMLs from contracts/rules/ and feeds synthetic OCSF events
+through Rule.evaluate(), asserting each rule fires AT the threshold of distinct
+values and does NOT fire below it. Also confirms the brute-force rule (plain count)
+is unaffected. Zero infra (default in-process deque counter).
+
+Run: C:/Python313/python.exe services/ws4-detection/test_engine_distinct_rules.py
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
+sys.path.insert(0, str(HERE))
+
+from engine import load_rules  # noqa: E402
+
+RULES_DIR = ROOT / "contracts" / "rules"
+FAILS: list[str] = []
+
+
+def check(cond, msg):
+    if not cond:
+        FAILS.append(msg)
+
+
+def rule_by_id(rules, rid):
+    for r in rules:
+        if r.id == rid:
+            return r
+    raise AssertionError(f"rule {rid} not loaded")
+
+
+PORT_SCAN_ID = "1d2c3b4a-5e6f-4708-8a91-0b1c2d3e4f05"
+LATERAL_ID = "2e3d4c5b-6f70-4819-9b02-1c2d3e4f5061"
+BRUTEFORCE_ID = "6f1c8a2e-0d3b-4c11-9a21-7b5e2f9a1c01"
+
+
+def net_event(src, port, t, ingest):
+    return {
+        "class_uid": 4001, "activity_id": 7, "time": t,
+        "src_endpoint": {"ip": src},
+        "dst_endpoint": {"ip": "10.0.0.1", "port": port},
+        "siem": {"ingest_id": ingest},
+    }
+
+
+def auth_event(user, dst_ip, t, ingest):
+    return {
+        "class_uid": 3002, "activity_id": 1, "status": "Success", "time": t,
+        "actor": {"user": {"name": user}},
+        "src_endpoint": {"ip": "192.168.1.50"},
+        "dst_endpoint": {"ip": dst_ip},
+        "siem": {"ingest_id": ingest},
+    }
+
+
+def run():
+    rules = load_rules(RULES_DIR)
+
+    # ---- PORT SCAN: 15 distinct ports fires; 14 does not ----
+    ps = rule_by_id(rules, PORT_SCAN_ID)
+    check(ps.stateful and ps.distinct_field == "dst_endpoint.port",
+          "port-scan rule should be stateful distinct on dst_endpoint.port")
+    base = 1_750_000_000_000
+    fired = [ps.evaluate(net_event("203.0.113.9", 1000 + i, base + i * 100, f"ps{i}"))
+             for i in range(15)]
+    check(fired[:14] == [False] * 14, "port scan: first 14 distinct ports must NOT fire")
+    check(fired[14] is True, "port scan: 15th distinct port MUST fire")
+
+    # below threshold: a different IP hitting only 14 distinct ports never fires
+    fired2 = [ps.evaluate(net_event("203.0.113.10", 2000 + i, base + i * 100, f"q{i}"))
+              for i in range(14)]
+    check(not any(fired2), "port scan: 14 distinct ports must NOT fire")
+
+    # repeats of the SAME port don't trip it (would under a plain count)
+    ps2 = rule_by_id(load_rules(RULES_DIR), PORT_SCAN_ID)
+    rep = [ps2.evaluate(net_event("198.51.100.7", 22, base + i * 100, f"r{i}"))
+           for i in range(30)]
+    check(not any(rep), "port scan: 30 hits on ONE port must NOT fire (distinct, not count)")
+
+    # ---- LATERAL MOVEMENT: 5 distinct hosts fires; 4 does not ----
+    lm = rule_by_id(rules, LATERAL_ID)
+    check(lm.group_by == "actor.user.name" and lm.distinct_field == "dst_endpoint.ip",
+          "lateral rule should group by user, distinct on dst_endpoint.ip")
+    lf = [lm.evaluate(auth_event("alice", f"10.0.0.{20 + i}", base + i * 1000, f"lm{i}"))
+          for i in range(5)]
+    check(lf[:4] == [False] * 4, "lateral: first 4 distinct hosts must NOT fire")
+    check(lf[4] is True, "lateral: 5th distinct host MUST fire")
+
+    lm2 = rule_by_id(load_rules(RULES_DIR), LATERAL_ID)
+    lf2 = [lm2.evaluate(auth_event("bob", f"10.0.1.{20 + i}", base + i * 1000, f"b{i}"))
+           for i in range(4)]
+    check(not any(lf2), "lateral: 4 distinct hosts must NOT fire")
+
+    # failed logins (activity 4) must NOT match the success-only lateral rule
+    lm3 = rule_by_id(load_rules(RULES_DIR), LATERAL_ID)
+    bad = auth_event("carol", "10.0.2.5", base, "c0")
+    bad["activity_id"] = 4
+    bad["status"] = "Failure"
+    check(lm3.evaluate(bad) is False, "lateral: failed auth must NOT match")
+
+    # ---- BRUTE FORCE unchanged: plain count of 10 failed auths fires ----
+    bf = rule_by_id(rules, BRUTEFORCE_ID)
+    check(bf.stateful and bf.distinct_field is None,
+          "brute-force must remain a plain-count rule (no distinct_field)")
+    bff = []
+    for i in range(10):
+        e = {"class_uid": 3002, "activity_id": 4, "time": base + i * 1000,
+             "src_endpoint": {"ip": "203.0.113.99"},
+             "siem": {"ingest_id": f"bf{i}"}}
+        bff.append(bf.evaluate(e))
+    check(bff[:9] == [False] * 9, "brute force: first 9 must NOT fire")
+    check(bff[9] is True, "brute force: 10th failed auth MUST fire (count unchanged)")
+
+
+def main():
+    run()
+    if FAILS:
+        print(f"[FAIL] distinct rules: {len(FAILS)} problem(s)")
+        for f in FAILS:
+            print("   -", f)
+        sys.exit(1)
+    print("[OK] port-scan + lateral-movement rules + brute-force unchanged PASS")
+
+
+if __name__ == "__main__":
+    main()

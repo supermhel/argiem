@@ -1,0 +1,25 @@
+title: Port scan from single source (many distinct destination ports)
+id: 1d2c3b4a-5e6f-4708-8a91-0b1c2d3e4f05
+status: stable
+description: >
+  One source IP contacting 15+ DISTINCT destination ports within 60 seconds.
+  Targets OCSF Network Activity (class 4001) connection attempts. Distinct-count
+  on dst_endpoint.port distinguishes a real horizontal/vertical scan from many
+  connections to a single service.
+level: high
+logsource:
+  category: network_activity
+detection:
+  network_conn:
+    class_uid: 4001
+  condition: network_conn
+fields:
+  - src_endpoint.ip
+  - dst_endpoint.port
+siem:
+  sector: common
+  score_weight: 60
+  window_seconds: 60
+  threshold: 15
+  group_by: src_endpoint.ip
+  distinct_field: dst_endpoint.port

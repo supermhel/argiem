@@ -16,11 +16,12 @@ from .active_directory import ActiveDirectoryParser
 from .vmware_vsphere import VmwareVsphereParser
 from .linux_ssh import LinuxSshParser
 from .generic_syslog import GenericSyslogParser
+from .windows_eventlog import WindowsEventLogParser
 
 _REGISTRY: dict[str, Parser] = {
     p.SOURCE_TYPE: p
     for p in (CiscoAsaParser(), ActiveDirectoryParser(), VmwareVsphereParser(),
-              LinuxSshParser(), GenericSyslogParser())
+              LinuxSshParser(), GenericSyslogParser(), WindowsEventLogParser())
 }
 
 

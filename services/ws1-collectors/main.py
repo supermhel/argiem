@@ -61,20 +61,44 @@ def run_once(bus) -> dict:
 
 
 def main() -> None:
-    # Daemon (T0): seed raw.events from the mock sources, then stay up with a
-    # /health endpoint so the container doesn't exit. WS-1 is a producer, not a
-    # bus consumer, so it uses the runner's health-only mode (empty handler map).
-    # Real continuous socket collectors (live syslog/SNMP/NetFlow) land in v0.2.
-    from shared.runner import serve  # noqa: E402
+    # Daemon: seed raw.events once from the bundled mock sources (offline-friendly),
+    # then start the REAL live ingestion path — a UDP syslog listener — and stay up
+    # behind the runner's /health endpoint until SIGTERM. WS-1 is a producer, not a
+    # bus consumer, so it uses the runner's health-only mode (empty handler map);
+    # the runner owns the signal handling + graceful shutdown loop.
+    import threading  # noqa: E402
 
+    from shared.runner import serve  # noqa: E402
     from shared.log import get_logger  # noqa: E402
+    from collectors.syslog_udp_server import (  # noqa: E402
+        SyslogUDPServer, DEFAULT_HOST, DEFAULT_PORT)
+
+    log = get_logger("ws1-collectors")
 
     bus = Bus()
     counts = run_once(bus)
-    get_logger("ws1-collectors").info(
-        "seeded", raw_events=counts["raw.events"],
-        asset_updates=counts["assets.updates"])
-    serve({}, health_port=int(os.getenv("PORT", "8001")), service_name="ws1-collectors")
+    log.info("seeded", raw_events=counts["raw.events"],
+             asset_updates=counts["assets.updates"])
+
+    # Live syslog ingestion (env-configurable; 5514 avoids privileged 514).
+    syslog_host = os.getenv("SYSLOG_UDP_HOST", DEFAULT_HOST)
+    syslog_port = int(os.getenv("SYSLOG_UDP_PORT", str(DEFAULT_PORT)))
+    udp = None
+    try:
+        udp = SyslogUDPServer(bus, host=syslog_host, port=syslog_port, logger=log)
+        udp.start()
+    except OSError as exc:
+        # e.g. port in use, or 514 without elevation. Stay up for /health anyway.
+        log.error("syslog UDP bind failed", host=syslog_host, port=syslog_port,
+                  error=str(exc))
+
+    shutdown = threading.Event()
+    try:
+        serve({}, health_port=int(os.getenv("PORT", "8001")),
+              service_name="ws1-collectors", shutdown=shutdown)
+    finally:
+        if udp is not None:
+            udp.stop()
 
 
 if __name__ == "__main__":
