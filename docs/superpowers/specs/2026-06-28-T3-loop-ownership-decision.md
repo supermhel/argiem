@@ -2,7 +2,13 @@
 
 Date: 2026-06-28
 Resolves: the one UNRESOLVED decision in the v0.1 build plan (bus `consume()` fix shape)
-Status: **DIRECTION CHOSEN, MECHANISM UNPROVEN** (downgraded from DECIDED by the Opus 4.8 final review)
+Status: **RESOLVED — mechanism proven on real Redis.** (Was "DIRECTION CHOSEN, MECHANISM
+UNPROVEN"; see [SSOT.md](../../../SSOT.md) for current canonical status.) The "still needs
+real-Redis confirmation" gaps below were closed in the v0.1 live-infra session: XAUTOCLAIM +
+XPENDING redelivery→DLQ ran on a real broker (see build-plan §"CI + live-infra
+confirmations"), and the WS-4 duplicate-alert footgun (gap 4) was fixed by deterministic
+`alert_key()` (T7, `services/ws4-detection/main.py:52`). Keeping the doc below unedited as
+the historical decision record.
 
 > **AMENDMENT (Opus 4.8 review).** This doc was architecture-by-assertion — it never wrote
 > the runner's read loop, and three claims below are FALSE or unspecified against the real
