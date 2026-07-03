@@ -63,6 +63,7 @@ those words get reused loosely across specs written weeks apart.
 | `docs/superpowers/specs/2026-06-27-argus-production-roadmap-design.md` | 3-tier production vision + §9 open-core design | **Design/aspiration, not built** — don't read as current architecture |
 | `docs/superpowers/specs/2026-06-28-T3-loop-ownership-decision.md` | Bus/runner design decision | Historical, now annotated RESOLVED (was marked unproven; gaps closed since — see file header) |
 | `docs/superpowers/specs/2026-07-02-argus-architecture-review.md` | Cross-cutting architecture review (v0.2, current) | **Current** — the most up-to-date structural analysis; adversarially reviewed, claims confirmed against code |
+| `docs/superpowers/specs/2026-07-02-argus-v0.3-improvement-plan.md` | v0.3 plan: more rules, robust rule logic, the rule-prefilter architecture fix, triage-first dashboard | **Current** — the forward roadmap; nothing built yet, this is the plan |
 | `docs/posts/launch-drafts.md` | Marketing draft | Draft, not published |
 | `AGENTS.md` | Imported cowork stub | Minimal, ignore |
 
