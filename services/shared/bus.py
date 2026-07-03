@@ -1,8 +1,16 @@
 """Shared message-bus abstraction (Contract B).
 
-Dev backend = Redis Streams. Prod backend = Kafka (same API). Selected by env
-BUS_BACKEND. When the backend lib is unavailable, falls back to an in-memory bus so
-services and their contract tests run with zero infrastructure.
+Backends: an in-memory bus (tests / zero-infra dev) and Redis Streams (real
+deployments), selected by env BUS_BACKEND; falls back to in-memory when the redis
+lib is unavailable. Kafka is a CANDIDATE for the central/scaled tier, not yet
+implemented (there is no _KafkaBus) — the two-backend abstraction proves the shape
+that a third backend would slot into, but do not build on Kafka until it exists.
+
+NOTE on backend fidelity: _MemoryBus.consume() drains-and-returns with a no-op ack
+(no persistent PEL), while _RedisBus has a real pending-entries list, blocking
+reads, and XAUTOCLAIM redelivery. Redelivery/DLQ semantics are therefore only
+partially exercised on MemoryBus (the runner tests re-create them via a re-produce
+loop). Anything that depends on real PEL behavior must be verified against Redis.
 
     from shared.bus import Bus
     bus = Bus()
