@@ -51,6 +51,13 @@ _SAFE_VERDICT = {"verdict": "unknown", "summary": "", "level": "low"}
 # verdict is tiny; 1 MiB is generous headroom while still capping a runaway response.
 _MAX_RESPONSE_BYTES = 1_048_576
 
+# Upper bounds on the request side. `event` and `reasons` derive from attacker-
+# influenced log data (WS-4 -> ai.requests). Bounding what we serialize into the
+# prompt stops a pathological event/reason list from inflating the POST body to
+# Ollama without limit (memory + a slow, oversized model call).
+_MAX_EVENT_CHARS = 4000
+_MAX_REASONS_CHARS = 2000
+
 
 PROMPT_TEMPLATE = (
     "You are a SIEM tier-1 analyst triaging a single security alert.\n"
@@ -129,7 +136,12 @@ class OllamaLLM:
     def analyze(self, event: dict, reasons: list[str]) -> dict:
         """Call the model and return a strict verdict. Raises on transport error
         (caller — FallbackLLM — is responsible for degrading)."""
-        prompt = PROMPT_TEMPLATE.format(event=json.dumps(event)[:4000], reasons=reasons)
+        # Bound both interpolated fields: `event` and `reasons` are attacker-
+        # influenced, so cap the serialized length to keep the prompt (and the
+        # POST body to Ollama) from growing without limit.
+        event_json = json.dumps(event)[:_MAX_EVENT_CHARS]
+        reasons_str = json.dumps(reasons)[:_MAX_REASONS_CHARS]
+        prompt = PROMPT_TEMPLATE.format(event=event_json, reasons=reasons_str)
         body = json.dumps({
             "model": self.model,
             "prompt": prompt,

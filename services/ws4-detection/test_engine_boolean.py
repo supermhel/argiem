@@ -82,6 +82,23 @@ def run():
     check(sentinel["hit"] is False, "T4 RCE: malicious condition must NOT import os")
     check(result is False, "T4: malicious/unparseable condition fails closed to False")
 
+    # --- no crash: deeply nested parens must not blow the stack ---
+    # A contributor-supplied rule with thousands of nested parens would recurse deep
+    # enough to raise RecursionError. That must be caught and fail closed to False,
+    # not escape and poison-pill the consumer (message redelivered forever).
+    deep = Rule({
+        "id": "d", "title": "deep", "level": "high",
+        "detection": {"sel": {"class_uid": 3002},
+                      "condition": "(" * 20000 + "sel" + ")" * 20000},
+        "siem": {"score_weight": 10},
+    })
+    try:
+        deep_result = deep.evaluate({"class_uid": 3002})
+    except RecursionError:
+        deep_result = "RAISED"
+    check(deep_result is False,
+          "T4: deeply nested parens must fail closed to False, not raise RecursionError")
+
     # --- T7: deterministic alert id ---
     bf = Rule({
         "id": "bf", "title": "brute-force", "level": "high",

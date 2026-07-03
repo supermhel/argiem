@@ -26,6 +26,30 @@ from store import InventoryStore  # noqa: E402
 
 STORE = InventoryStore(os.getenv("INVENTORY_DB", ":memory:"))
 
+# Bounds on client-controlled inputs. `limit` is clamped so a hostile/typo value
+# can't ask SQLite for an unbounded scan; the POST body is capped so an oversized
+# upload can't be buffered into memory (a naive rfile.read(Content-Length) would).
+_MAX_LIMIT = 1000
+_DEFAULT_LIMIT = 50
+_MAX_BODY_BYTES = 1_048_576  # 1 MiB — an Observation is a few hundred bytes.
+
+
+class _BadRequest(Exception):
+    """Raised on malformed client input; mapped to a 400 by the dispatcher."""
+
+
+def _parse_limit(raw) -> int:
+    """Coerce ?limit= to an int in [1, _MAX_LIMIT]. Raises _BadRequest on garbage."""
+    if raw is None:
+        return _DEFAULT_LIMIT
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        raise _BadRequest("limit must be an integer")
+    if n < 1:
+        raise _BadRequest("limit must be >= 1")
+    return min(n, _MAX_LIMIT)
+
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, payload):
@@ -40,17 +64,32 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        # Any malformed input (bad ?at=, bad ?limit=) becomes a clean 4xx/5xx JSON
+        # response instead of an unhandled exception that drops the connection and
+        # leaks a stack trace to the client.
+        try:
+            self._route_get()
+        except _BadRequest as e:
+            self._send(400, {"error": str(e)})
+        except Exception:  # noqa: BLE001 - never let a handler crash the thread
+            self._send(500, {"error": "internal error"})
+
+    def _route_get(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         if u.path == "/assets/resolve":
             if "ip" not in q or "at" not in q:
                 return self._send(400, {"error": "ip and at required"})
-            asset = STORE.resolve(q["ip"], q["at"])
+            try:
+                asset = STORE.resolve(q["ip"], q["at"])
+            except ValueError:
+                # datetime.fromisoformat() on a malformed `at` -> 400, not a 500.
+                raise _BadRequest("at must be an ISO-8601 timestamp")
             return self._send(200, asset) if asset else self._send(404, {"error": "not found"})
         if u.path == "/assets":
             return self._send(200, STORE.list(
                 ip=q.get("ip"), mac=q.get("mac"), sector=q.get("sector"),
-                status=q.get("status"), limit=int(q.get("limit", 50))))
+                status=q.get("status"), limit=_parse_limit(q.get("limit"))))
         if u.path.startswith("/assets/"):
             mac = u.path[len("/assets/"):]
             asset = STORE.get(mac)
@@ -58,9 +97,29 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, {"error": "no such path"})
 
     def do_POST(self):
+        try:
+            self._route_post()
+        except _BadRequest as e:
+            self._send(400, {"error": str(e)})
+        except Exception:  # noqa: BLE001 - never let a handler crash the thread
+            self._send(500, {"error": "internal error"})
+
+    def _route_post(self):
         u = urlparse(self.path)
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length) or b"{}")
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            raise _BadRequest("invalid Content-Length")
+        if length < 0:
+            raise _BadRequest("invalid Content-Length")
+        if length > _MAX_BODY_BYTES:
+            raise _BadRequest("request body too large")
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise _BadRequest("body must be valid JSON")
+        if not isinstance(body, dict):
+            raise _BadRequest("body must be a JSON object")
         if u.path == "/assets/upsert":
             asset = STORE.upsert(body)
             return self._send(200, asset) if asset else self._send(400, {"error": "mac required"})

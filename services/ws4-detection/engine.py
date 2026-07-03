@@ -85,10 +85,14 @@ class Rule:
         # T4: explicit recursive-descent boolean evaluator over the tokens.
         # No eval(): rule files are contributor-supplied (open source), so executing
         # them as Python — even with __builtins__ stripped — is an RCE surface.
+        # RecursionError is caught too: a rule with deeply nested parens would
+        # otherwise blow the stack and escape as an uncaught error, poison-pilling
+        # the consumer (message unacked -> redelivered forever). A malformed
+        # condition must fail closed to "no match", never crash the worker.
         try:
             value, end = _parse_or(tokens, 0, matched)
             return bool(value) if end == len(tokens) else False
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, RecursionError):
             return False
 
     def alert_key(self, event: dict) -> str:

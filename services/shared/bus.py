@@ -13,7 +13,6 @@ services and their contract tests run with zero infrastructure.
 from __future__ import annotations
 import json
 import os
-import time
 from dataclasses import dataclass
 from collections import defaultdict, deque
 from typing import Iterator, Optional
@@ -75,6 +74,37 @@ class _RedisBus:
     def _consumer_name(self, group):
         return f"{group}-{os.getpid()}"
 
+    def _decode_entry(self, topic, group, eid, fields):
+        """Parse one stream entry into a Message, or quarantine it and return None.
+
+        A stream entry can be un-parseable — a foreign/corrupt producer, a truncated
+        payload, or a non-JSON body. Letting ``json.loads`` raise here is a denial of
+        service: the exception kills the consume/claim generator mid-iteration, so
+        (a) valid entries already read into the PEL in the same batch are never
+        yielded to the handler, and (b) the poison entry never reaches the runner's
+        DLQ path, so it is redelivered forever and every reclaim pass re-raises on it
+        — permanently wedging the whole topic. Instead we route the raw entry to
+        ``<topic>.deadletter`` and XACK it so it leaves the PEL, then skip it.
+        """
+        try:
+            return Message(topic, fields.get("key"),
+                           json.loads(fields["payload"]), eid)
+        except (KeyError, ValueError, TypeError):
+            try:
+                self.r.xadd(f"{topic}.deadletter", {
+                    "key": fields.get("key") or "",
+                    "payload": json.dumps({
+                        "topic": topic, "group": group, "id": eid,
+                        "parse_error": True, "raw": fields.get("payload"),
+                    }),
+                })
+                self.r.xack(topic, group, eid)
+            except Exception:
+                # Best-effort quarantine; if the DLQ write itself fails we still must
+                # not re-raise (that would re-wedge the consumer). Drop this entry.
+                pass
+            return None
+
     def consume(self, topic, group="cg-default", block_ms=5000) -> Iterator[Message]:
         """Read NEW messages ('>') into the group's PEL and yield them WITHOUT
         acking. The caller is responsible for calling ack(msg, group) after the
@@ -100,7 +130,9 @@ class _RedisBus:
             return
         for _stream, entries in resp:
             for eid, fields in entries:
-                yield Message(topic, fields.get("key"), json.loads(fields["payload"]), eid)
+                msg = self._decode_entry(topic, group, eid, fields)
+                if msg is not None:
+                    yield msg
 
     def ack(self, msg, group="cg-default"):
         """Acknowledge a message after the handler has succeeded, removing it from
@@ -133,9 +165,9 @@ class _RedisBus:
             for eid, fields in entries:
                 if not fields:  # entry was deleted from the stream; skip
                     continue
-                claimed.append(
-                    Message(topic, fields.get("key"),
-                            json.loads(fields["payload"]), eid))
+                msg = self._decode_entry(topic, group, eid, fields)
+                if msg is not None:
+                    claimed.append(msg)
             if next_start in ("0-0", 0, "0"):
                 break
             start = next_start
