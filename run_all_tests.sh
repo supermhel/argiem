@@ -19,6 +19,10 @@ for ws in ws1-collectors ws2-normalization ws3-indexer ws4-detection ws5-ai ws6-
   ( cd "services/$ws" && $PY test_contract.py ) || fail=1
 done
 
+echo
+echo "== ws3 v0.3 (C1): triage API (persistence, tolerant defaults, malformed input) =="
+$PY services/ws3-indexer/test_triage_api.py || fail=1
+
 # Extended zero-infra suite (runner, window counters, boolean evaluator, e2e).
 # Still no Docker/Redis/OpenSearch — all on the memory bus + in-memory store.
 echo

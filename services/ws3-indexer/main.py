@@ -53,7 +53,10 @@ def main():
     # path used by tests / the e2e harness. The store is shared across the 4 topic
     # threads; MemoryStore is dict-based (fine for dev), OpenSearchStore is the real
     # backend in compose.
+    import threading  # noqa: E402
+
     from shared.runner import serve  # noqa: E402
+    import triage_api  # noqa: E402
 
     store = make_store()
 
@@ -62,6 +65,18 @@ def main():
             index_doc(store, payload)
         except ValueError:
             pass  # unroutable doc (e.g. ai.results) -> drop, matches run()
+
+    # C1 (v0.3): the triage API runs on its OWN port/thread, alongside the bus
+    # consumer loop -- mirrors how WS-1 runs its UDP listener alongside the
+    # runner's health thread (a second independent network listener, not
+    # routed through the runner, which only owns bus consume loops + /health).
+    triage_thread = threading.Thread(
+        target=triage_api.serve,
+        args=(store,),
+        kwargs={"port": int(os.getenv("TRIAGE_PORT", "8013"))},
+        daemon=True,
+    )
+    triage_thread.start()
 
     handlers = {t: ("cg-index", handler) for t in TOPICS}
     serve(handlers, health_port=int(os.getenv("PORT", "8003")), service_name="ws3-indexer")

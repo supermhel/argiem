@@ -38,3 +38,16 @@ class MemoryStore(StorageAdapter):
 
     def all_docs(self, index: str) -> list[dict]:
         return list(self._indices.get(index, {}).values())
+
+    # -- C1 triage: cross-index lookup by alert_id --------------------------
+    def find_alert(self, alert_id: str) -> tuple[str, dict] | None:
+        """Locate an alert doc by id across all daily alerts-* indices (the
+        client only has alert_id, not which day's index it landed in).
+        Returns (index_name, document) or None if not found."""
+        for index in self._indices:
+            if not index.startswith("alerts-"):
+                continue
+            doc = self._indices[index].get(alert_id)
+            if doc is not None:
+                return index, doc
+        return None

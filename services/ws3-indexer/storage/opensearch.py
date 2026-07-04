@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from .adapter import StorageAdapter
@@ -60,3 +61,21 @@ class OpenSearchStore(StorageAdapter):
         except urllib.error.HTTPError:
             return 0
         return int(result.get("count", 0))
+
+    # -- C1 triage: cross-index lookup by alert_id --------------------------
+    def find_alert(self, alert_id: str) -> tuple[str, dict] | None:
+        """Locate an alert doc by id across all daily alerts-* indices via a
+        _search with an _id term query (a direct GET needs the exact index
+        name, which the client -- only holding alert_id -- doesn't have).
+        Skeleton, like the rest of this module: not exercised by offline
+        tests, but constructs the real request a live deployment needs."""
+        body = {"size": 1, "query": {"term": {"_id": alert_id}}}
+        try:
+            result = self._request("POST", "/alerts-*/_search", body)
+        except urllib.error.HTTPError:
+            return None
+        hits = result.get("hits", {}).get("hits", [])
+        if not hits:
+            return None
+        hit = hits[0]
+        return hit.get("_index"), hit.get("_source", {})
