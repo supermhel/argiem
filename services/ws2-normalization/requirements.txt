@@ -4,7 +4,7 @@
 # comment). Pinned and actually installed by the Dockerfile (M2 supply-chain,
 # PLAN_C Tier 2.2 -- these used to be unpinned inline `pip install` args with no
 # machine-readable manifest, so Dependabot/SBOM tooling had nothing to track).
-PyYAML==6.0.2      # A5 enrichment (contracts/enrichment/*.yml)
+PyYAML==6.0.3      # A5 enrichment (contracts/enrichment/*.yml)
 redis==5.0.8       # bus backend (services/shared/bus.py::_RedisBus, lazy-imported)
 
 # Test-only extra (M1 correctness gate) -- NOT installed by the Dockerfile,
