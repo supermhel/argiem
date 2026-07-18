@@ -19,7 +19,7 @@ jobs:
       security-events: write  # to upload SARIF results
       id-token: write          # to publish results and get a badge (publish_results: true)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
