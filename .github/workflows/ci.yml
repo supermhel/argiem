@@ -16,7 +16,7 @@ jobs:
           # Full history so gitleaks can scan all commits, not just the tip.
           fetch-depth: 0
       - name: Scan for secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           # Lets the action post a summary / comment on pull requests.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
