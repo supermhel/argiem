@@ -24,7 +24,7 @@ jobs:
       - name: Install atheris
         run: pip install atheris
       - name: Restore corpus cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: tools/fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
