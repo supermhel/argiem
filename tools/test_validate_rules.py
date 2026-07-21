@@ -140,6 +140,53 @@ class TestValidateRule(unittest.TestCase):
         self.assertTrue(any("window_seconds" in e for e in self._errs(
             lambda r: r["siem"].update(window_seconds=-5))))
 
+    # -- C3: optional mitre block --------------------------------------
+
+    def test_mitre_absent_is_fine(self):
+        self.assertEqual(validate_rule(_base_rule()), [])
+
+    def test_mitre_valid_attack(self):
+        self.assertEqual(self._errs(
+            lambda r: r.update(mitre={"tactic": "TA0006", "technique": "T1110"})), [])
+
+    def test_mitre_valid_attack_subtechnique(self):
+        self.assertEqual(self._errs(
+            lambda r: r.update(mitre={"tactic": "TA0006", "technique": "T1110.003"})), [])
+
+    def test_mitre_valid_ics(self):
+        self.assertEqual(self._errs(
+            lambda r: r.update(mitre={"framework": "attack-ics", "tactic": "TA0106",
+                                      "technique": "T0836"})), [])
+
+    def test_mitre_valid_atlas(self):
+        self.assertEqual(self._errs(
+            lambda r: r.update(mitre={"framework": "atlas", "tactic": "AML.TA0004",
+                                      "technique": "AML.T0051"})), [])
+
+    def test_mitre_missing_technique(self):
+        self.assertTrue(any("technique" in e for e in self._errs(
+            lambda r: r.update(mitre={"tactic": "TA0006"}))))
+
+    def test_mitre_bad_technique_shape(self):
+        self.assertTrue(any("technique" in e for e in self._errs(
+            lambda r: r.update(mitre={"technique": "not-a-technique-id"}))))
+
+    def test_mitre_bad_tactic_shape(self):
+        self.assertTrue(any("tactic" in e for e in self._errs(
+            lambda r: r.update(mitre={"technique": "T1110", "tactic": "bogus"}))))
+
+    def test_mitre_bad_framework(self):
+        self.assertTrue(any("framework" in e for e in self._errs(
+            lambda r: r.update(mitre={"technique": "T1110", "framework": "made-up"}))))
+
+    def test_mitre_unknown_key(self):
+        self.assertTrue(any("unknown key" in e for e in self._errs(
+            lambda r: r.update(mitre={"technique": "T1110", "url": "https://example.com"}))))
+
+    def test_mitre_not_a_mapping(self):
+        self.assertTrue(any("mitre" in e for e in self._errs(
+            lambda r: r.update(mitre="T1110"))))
+
 
 class TestShippedRules(unittest.TestCase):
     def test_all_shipped_rules_pass(self):

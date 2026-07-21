@@ -33,22 +33,37 @@ detection rules. Update this file in the same PR as any parser or rule change.
 
 ## Rule-by-rule producer status
 
-| Rule | Fields required | Producer exists? |
-|---|---|---|
-| common_bruteforce | class 3002, activity 4 (Failure) | yes (linux_ssh, active_directory) |
-| common_lateral_movement | class 3002, activity 1, status Success, dst_endpoint.hostname | yes (windows_eventlog 4624) |
-| common_port_scan | class 4001, activity 6 (Deny), dst_endpoint.port | yes (cisco_asa) |
-| dc_mass_vm_delete | class 6003, activity 4, siem.sector=datacenter | yes (vmware_vsphere) |
-| bank_db_priv_esc | class 6005, activity 5, siem.sector=bank | yes (db_audit, added v0.3) |
-| agent_credential_file_access | class 6003, unmapped.mcp.credential_path_access=true | yes (mcp_agent, added v0.4) |
-| agent_tool_call_burst | class 6003, unmapped.mcp.session_id | yes (mcp_agent, added v0.4) |
-| agent_prompt_injection_indicator | class 6003, unmapped.mcp.injection_indicator=true | yes (mcp_agent, added v0.4) |
-| ot_write_outside_maintenance | class 6003, activity 3, time outside_hours | yes (opcua_audit, added v0.4) |
-| ot_new_engineering_connection | class 3002, activity 1, distinct src_endpoint.ip per unmapped.ot.server_id | yes (opcua_audit, added v0.4) |
-| ot_config_change | class 6003, unmapped.ot.is_config_node=true | yes (opcua_audit, added v0.4) |
-| common_impossible_travel | class 3002, activity 1, distinct src_endpoint.location.country | yes (linux_ssh + A5 geo enrichment, added v0.4 -- see A5's note below: `check_rule_producers.py` now runs the real enrich() step too, not just parsers) |
-| n8n_new_webhook_exposed | class 6003, activity 1, api.operation=webhook.created | yes (n8n_audit, added v0.4) |
-| n8n_workflow_modified_after_hours | class 6003, siem.source_type=n8n_audit, time outside_hours | yes (n8n_audit, added v0.4) |
+| Rule | Fields required | Producer exists? | MITRE |
+|---|---|---|---|
+| common_bruteforce | class 3002, activity 4 (Failure) | yes (linux_ssh, active_directory) | ATT&CK T1110 / TA0006 |
+| common_password_spray | class 3002, activity 4, distinct src_endpoint.ip | yes (linux_ssh, active_directory) | ATT&CK T1110.003 / TA0006 |
+| common_lateral_movement | class 3002, activity 1, status Success, dst_endpoint.hostname | yes (windows_eventlog 4624) | ATT&CK T1021 / TA0008 |
+| common_port_scan | class 4001, activity 6 (Deny), dst_endpoint.port | yes (cisco_asa) | ATT&CK T1046 / TA0007 |
+| common_priv_grant | class 3003, activity 5 | yes (windows_eventlog 4728/4732) | ATT&CK T1098 / TA0003 |
+| common_after_hours_admin | class 1002, activity 2, outside_hours | yes (windows_eventlog 4672) | ATT&CK T1078 / TA0004 |
+| common_impossible_travel | class 3002, activity 1, distinct src_endpoint.location.country | yes (linux_ssh + A5 geo enrichment, added v0.4 -- see A5's note below: `check_rule_producers.py` now runs the real enrich() step too, not just parsers) | ATT&CK T1078 / TA0001 |
+| dc_mass_vm_delete | class 6003, activity 4, siem.sector=datacenter | yes (vmware_vsphere) | ATT&CK T1485 / TA0040 |
+| bank_db_priv_esc | class 6005, activity 5, siem.sector=bank | yes (db_audit, added v0.3) | ATT&CK T1548 / TA0004 |
+| agent_credential_file_access | class 6003, unmapped.mcp.credential_path_access=true | yes (mcp_agent, added v0.4) | ATT&CK T1552 / TA0006 |
+| agent_destructive_command | class 6003, unmapped.mcp.destructive_command_indicator=true | yes (mcp_agent, added v0.4) | ATT&CK T1485 / TA0040 |
+| agent_egress_non_allowlisted_domain | class 6003, unmapped.mcp.is_egress_call=true | yes (mcp_agent, added v0.4) | ATT&CK T1071 / TA0011 |
+| agent_tool_call_burst | class 6003, unmapped.mcp.session_id | yes (mcp_agent, added v0.4) | *(none -- no solid single ATT&CK mapping for a generic tool-call-volume burst; omitted rather than forced, see the C3 rule below)* |
+| agent_prompt_injection_indicator | class 6003, unmapped.mcp.injection_indicator=true | yes (mcp_agent, added v0.4) | ATLAS AML.T0051 / AML.TA0004 |
+| ot_write_outside_maintenance | class 6003, activity 3, time outside_hours | yes (opcua_audit, added v0.4) | ATT&CK-ICS T0836 / TA0106 |
+| ot_new_engineering_connection | class 3002, activity 1, distinct src_endpoint.ip per unmapped.ot.server_id | yes (opcua_audit, added v0.4) | ATT&CK-ICS T0864 / TA0108 |
+| ot_config_change | class 6003, unmapped.ot.is_config_node=true | yes (opcua_audit, added v0.4) | ATT&CK-ICS T0836 / TA0106 |
+| n8n_new_webhook_exposed | class 6003, activity 1, api.operation=webhook.created | yes (n8n_audit, added v0.4) | ATT&CK T1133 / TA0003 |
+| n8n_workflow_modified_after_hours | class 6003, siem.source_type=n8n_audit, time outside_hours | yes (n8n_audit, added v0.4) | ATT&CK T1078 / TA0004 |
+
+**C3 rule (v0.5):** MITRE tagging is a SHAPE-checked, honest-effort mapping
+(`tools/validate_rules.py`'s `mitre` block), not a claim of MITRE endorsement --
+each id above was individually verified against MITRE's published corpus at the
+time it was added. A rule with no defensible single-technique mapping (only
+`agent_tool_call_burst` today) omits the field entirely rather than forcing one;
+`tools/validate_rules.py` treats `mitre` as fully optional for exactly this
+reason. The dashboard's coverage heatmap (`services/ws7-dashboard/`) renders
+straight from this passthrough field on real alerts (`GET /api/v1/rules` +
+alert data), so an omitted mapping shows as a real gap, not a hidden one.
 
 ## A6 guardrail (implemented)
 

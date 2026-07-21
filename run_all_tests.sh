@@ -107,6 +107,9 @@ echo
 echo "== M4.5 rule-pack plugin discovery (entry points) + Detector merge/collision =="
 $PY services/ws4-detection/test_plugins.py || fail=1
 echo
+echo "== ws4 B4: rule hot-reload (mtime poll, fail-closed on malformed edit) =="
+$PY services/ws4-detection/test_hot_reload.py || fail=1
+echo
 echo "== F3: tenants.py::load_disabled_rules fails open on a malformed/path-traversal tenant_id =="
 $PY services/ws4-detection/test_tenants.py || fail=1
 echo
