@@ -20,6 +20,10 @@ Both expose the same methods::
         # DISTINCT-COUNT of `value` seen in [now-window, now] after add
         # (port scan = distinct dst ports; lateral movement = distinct dst hosts)
 
+    hit_periodic(key, now_ms, window_ms, member) -> tuple[int, float | None]
+        # (COUNT, coefficient-of-variation of inter-arrival deltas) after add.
+        # v0.5 A3: periodicity/beaconing primitive -- see its design note below.
+
 The engine calls one of them and compares the returned count to the rule's threshold.
 
 Distinct-count design
@@ -40,8 +44,30 @@ The two backends stay consistent the same way the COUNT pair does:
   recency) instead of adding a row, so the set naturally holds one entry per distinct
   value; ZREMRANGEBYSCORE ages values out and ZCARD is the distinct count. This is
   exactly the COUNT path with member := value, which is why both backends agree.
+
+Periodicity design (v0.5 A3, docs/superpowers/specs/2026-07-21-periodicity-
+primitive.md has the full rationale)
+-----------------------------------
+A C2 beacon calls home at a roughly REGULAR interval; a plain COUNT can't tell
+a beacon apart from a burst of unrelated traffic to the same group. Both
+backends already keep the exact timestamps a plain ``hit()`` needs to trim the
+window -- ``hit_periodic()`` reuses that same window state (no new storage)
+and additionally reports the coefficient of variation (stdev / mean) of the
+CONSECUTIVE inter-arrival deltas among the events currently in-window. Low CV
+= evenly spaced = beacon-shaped. ``None`` when fewer than 3 events are in the
+window (need 2 deltas for a variance to mean anything) -- the caller must
+treat ``None`` as "can't judge yet", never as "passes/fails" on its own.
+
+This is deliberately a COARSE proxy, not a robust beacon detector: it is
+trivially evaded by an attacker adding random jitter to their callback
+interval (documented, not silently overpromised -- see the design doc). It is
+bounded-memory and backend-symmetric (same underlying window, same member-
+dedup as ``hit()``), which was the actual design goal: don't add new
+storage or new redelivery-dedup semantics on top of what already works.
 """
 from __future__ import annotations
+
+import math
 
 from collections import defaultdict, deque
 
@@ -54,6 +80,22 @@ from collections import defaultdict, deque
 # source IPs/usernames. The Redis backend self-cleans via EXPIRE; this sweep is
 # the deque equivalent. Amortized O(1): a full scan every _SWEEP_EVERY hits.
 _SWEEP_EVERY = 256
+
+
+def _coefficient_of_variation(sorted_times: list) -> float | None:
+    """stdev/mean of consecutive deltas in a sorted list of timestamps (ms), or
+    None if there are fewer than 2 deltas (need >=3 timestamps) -- with only
+    0 or 1 deltas a "variance" is either undefined or trivially zero, neither
+    of which says anything real about regularity. None if the mean delta is
+    not positive (degenerate/duplicate timestamps -- no rate to speak of)."""
+    if len(sorted_times) < 3:
+        return None
+    deltas = [b - a for a, b in zip(sorted_times, sorted_times[1:])]
+    mean = sum(deltas) / len(deltas)
+    if mean <= 0:
+        return None
+    variance = sum((d - mean) ** 2 for d in deltas) / len(deltas)
+    return math.sqrt(variance) / mean
 
 
 class DequeWindowCounter:
@@ -124,6 +166,13 @@ class DequeWindowCounter:
         self._sweep(now_ms, window_ms)
         return count
 
+    def hit_periodic(self, key: str, now_ms: int, window_ms: int, member=None):
+        """(count, cv) -- reuses the exact same window `hit()` maintains (same
+        member-dedup, same trim), just also reports inter-arrival regularity."""
+        count = self.hit(key, now_ms, window_ms, member)
+        times = sorted(t for t, _ in self._w.get(key, ()))
+        return count, _coefficient_of_variation(times)
+
 
 class RedisWindowCounter:
     """Global sliding window in a Redis sorted set per (rule, group).
@@ -173,3 +222,12 @@ class RedisWindowCounter:
         pipe.expire(zkey, max(1, window_ms // 1000 + 1))
         res = pipe.execute()
         return int(res[2])
+
+    def hit_periodic(self, key: str, now_ms: int, window_ms: int, member=None):
+        """(count, cv) -- same ZADD/trim/EXPIRE as `hit()` (identical member-
+        dedup and window state), plus one extra ZRANGE to read back the
+        in-window timestamps for the coefficient-of-variation calculation."""
+        zkey = f"{self.ns}:{key}"
+        count = self.hit(key, now_ms, window_ms, member)
+        times = sorted(int(score) for _, score in self.r.zrange(zkey, 0, -1, withscores=True))
+        return count, _coefficient_of_variation(times)

@@ -257,6 +257,27 @@ def validate_rule(rule: dict) -> list[str]:
             if v is not None and (not isinstance(v, str) or not v):
                 errors.append(f"siem.{f} must be a non-empty dotted path, got {v!r}")
 
+        if "periodicity" in siem:
+            periodicity = siem["periodicity"]
+            if not isinstance(periodicity, dict):
+                errors.append(f"siem.periodicity must be a mapping, got "
+                              f"{type(periodicity).__name__}")
+            else:
+                unknown = set(periodicity) - {"max_cv"}
+                if unknown:
+                    errors.append(f"siem.periodicity has unknown key(s) {sorted(unknown)}")
+                max_cv = periodicity.get("max_cv")
+                if (isinstance(max_cv, bool) or not isinstance(max_cv, (int, float))
+                        or not 0 < max_cv <= 1):
+                    errors.append(f"siem.periodicity.max_cv must be a number in "
+                                  f"(0, 1], got {max_cv!r}")
+            if win is None or thr is None:
+                errors.append("siem.periodicity requires window_seconds and threshold "
+                              "to also be set (periodicity is a stateful-rule feature)")
+            if siem.get("distinct_field"):
+                errors.append("siem.periodicity cannot be combined with distinct_field "
+                              "-- the two window semantics don't compose")
+
     if "mitre" in rule:
         _validate_mitre(rule["mitre"], errors)
     return errors

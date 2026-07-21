@@ -187,6 +187,46 @@ class TestValidateRule(unittest.TestCase):
         self.assertTrue(any("mitre" in e for e in self._errs(
             lambda r: r.update(mitre="T1110"))))
 
+    # -- v0.5 A3: optional periodicity block -----------------------------
+
+    def test_periodicity_valid(self):
+        self.assertEqual(self._errs(
+            lambda r: r["siem"].update(periodicity={"max_cv": 0.3})), [])
+
+    def test_periodicity_not_a_mapping(self):
+        self.assertTrue(any("periodicity must be a mapping" in e for e in self._errs(
+            lambda r: r["siem"].update(periodicity=0.3))))
+
+    def test_periodicity_max_cv_out_of_range(self):
+        self.assertTrue(any("max_cv" in e for e in self._errs(
+            lambda r: r["siem"].update(periodicity={"max_cv": 1.5}))))
+
+    def test_periodicity_max_cv_zero_rejected(self):
+        self.assertTrue(any("max_cv" in e for e in self._errs(
+            lambda r: r["siem"].update(periodicity={"max_cv": 0}))))
+
+    def test_periodicity_missing_max_cv(self):
+        self.assertTrue(any("max_cv" in e for e in self._errs(
+            lambda r: r["siem"].update(periodicity={}))))
+
+    def test_periodicity_unknown_key(self):
+        self.assertTrue(any("unknown key" in e for e in self._errs(
+            lambda r: r["siem"].update(periodicity={"max_cv": 0.3, "bogus": 1}))))
+
+    def test_periodicity_requires_window_and_threshold(self):
+        def mutate(r):
+            r["siem"].pop("window_seconds")
+            r["siem"].pop("threshold")
+            r["siem"]["periodicity"] = {"max_cv": 0.3}
+        self.assertTrue(any("periodicity requires" in e for e in self._errs(mutate)))
+
+    def test_periodicity_cannot_combine_with_distinct_field(self):
+        def mutate(r):
+            r["siem"]["periodicity"] = {"max_cv": 0.3}
+            r["siem"]["distinct_field"] = "dst_endpoint.port"
+        self.assertTrue(any("cannot be combined with distinct_field" in e
+                            for e in self._errs(mutate)))
+
 
 class TestShippedRules(unittest.TestCase):
     def test_all_shipped_rules_pass(self):

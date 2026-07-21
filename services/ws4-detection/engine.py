@@ -300,6 +300,12 @@ class Rule:
         # raw event count (port scan -> distinct dst ports; lateral movement ->
         # distinct dst hosts). None => plain count (brute-force, mass-delete).
         self.distinct_field = siem.get("distinct_field")
+        # v0.5 A3: optional periodicity/beaconing check on top of the plain
+        # count -- {"max_cv": <float>}. Mutually meaningful only alongside
+        # window_seconds/threshold; validate_rules.py enforces the shape and
+        # that it isn't combined with distinct_field (the two window
+        # semantics don't compose). See window.py's design note.
+        self.periodicity = siem.get("periodicity")
         self.stateful = self.window_seconds is not None and self.threshold is not None
         # Sliding-window counter (T6). Defaults to an in-process deque (correct for a
         # single replica / tests). main() swaps in a RedisWindowCounter when running
@@ -504,6 +510,15 @@ class Rule:
                 return False
             count = self._counter.hit_distinct(f"{self.id}:{tenant}:{group}", now,
                                                window_ms, value, member)
+        elif self.periodicity:
+            count, cv = self._counter.hit_periodic(f"{self.id}:{tenant}:{group}", now,
+                                                   window_ms, member)
+            if cv is None:
+                # Fewer than 3 events in-window yet -- not enough data to judge
+                # regularity. Fail closed: never treat "can't tell" as "is
+                # periodic" (that would fabricate a beacon signal from noise).
+                return False
+            return count >= self.threshold and cv <= self.periodicity.get("max_cv", 1.0)
         else:
             count = self._counter.hit(f"{self.id}:{tenant}:{group}", now, window_ms, member)
         return count >= self.threshold

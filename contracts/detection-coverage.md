@@ -10,7 +10,7 @@ detection rules. Update this file in the same PR as any parser or rule change.
 | 1002 | Kernel/Process | generic_syslog, windows_eventlog (4688/4672) | common_after_hours_admin (4672 activity 2) |
 | 3002 | Authentication | linux_ssh, active_directory, windows_eventlog (4624/4634/4647), opcua_audit (v0.4 P2, session events), n8n_audit (v0.4 P3, login/logout — no dedicated rule yet), cef (v0.5, auth-shaped extension keys), cloudtrail (v0.5, ConsoleLogin) | common_bruteforce, common_lateral_movement, common_password_spray, common_impossible_travel (v0.4 P4), ot_new_engineering_connection, cloud_root_console_login (v0.5) |
 | 3003 | Account Change | windows_eventlog (4720/4722/4726/4728/4732, added v0.3) | common_priv_grant, common_rapid_account_lifecycle (v0.5) |
-| 4001 | Network Activity | cisco_asa, cef (v0.5, non-auth-shaped extension keys) | common_port_scan |
+| 4001 | Network Activity | cisco_asa, cef (v0.5, non-auth-shaped extension keys) | common_port_scan, common_beaconing (v0.5, periodicity primitive) |
 | 4002 | DNS/HTTP Activity | dns_query (v0.5, first producer — closes the long-standing gap below) | common_dns_exfil (v0.5) |
 | 6003 | API Activity | vmware_vsphere, mcp_agent (v0.4 P1), opcua_audit (v0.4 P2, write/method events), n8n_audit (v0.4 P3), k8s_audit (v0.5, first k8s producer), cloudtrail (v0.5, non-ConsoleLogin management events) | dc_mass_vm_delete, agent_credential_file_access, agent_tool_call_burst, agent_prompt_injection_indicator, ot_write_outside_maintenance, ot_config_change, n8n_new_webhook_exposed, n8n_workflow_modified_after_hours, dc_privileged_container (v0.5) |
 | 6005 | Datastore Activity | db_audit (v0.3 — fixed the dormancy below) | bank_db_priv_esc, bank_mass_card_read (v0.5) |
@@ -64,6 +64,7 @@ un-dormanting `common_dns_exfil.yml`.
 | cloud_root_console_login | class 3002, activity 1, siem.source_type=cloudtrail, unmapped.cloud.identity_type=Root, unmapped.cloud.mfa_used=No | yes (cloudtrail, added v0.5) | ATT&CK T1078.004 / TA0001 |
 | bank_mass_card_read | class 6005, activity 1, siem.sector=bank, distinct unmapped.db.object | yes (db_audit, object field added v0.5) | ATT&CK T1005 / TA0009 |
 | common_rapid_account_lifecycle | class 3003, activity in [1,4], group unmapped.target_user.name | yes (windows_eventlog 4720/4726) | ATT&CK T1136 / TA0003 |
+| common_beaconing | class 4001, activity 7, periodicity max_cv<=0.25 | yes (cisco_asa, existing producer; A3 periodicity primitive added v0.5) | ATT&CK T1071 / TA0011 |
 
 **C3 rule (v0.5):** MITRE tagging is a SHAPE-checked, honest-effort mapping
 (`tools/validate_rules.py`'s `mitre` block), not a claim of MITRE endorsement --

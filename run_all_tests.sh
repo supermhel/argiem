@@ -70,6 +70,9 @@ echo
 echo "== shared ocsf helpers (P0-1: IPv4-mapped-IPv6 normalization) =="
 $PY services/shared/test_ocsf.py || fail=1
 echo
+echo "== shared bus trim_acked (P0-5: acked-stream reaper; RedisBus half is opt-in via make test-live) =="
+$PY services/shared/test_bus_trim_acked.py || fail=1
+echo
 echo "== ws2 property-based parser hardening (M1, Hypothesis) =="
 $PY services/ws2-normalization/parsers/test_property_hardening.py || fail=1
 echo
@@ -78,6 +81,9 @@ $PY services/ws2-normalization/test_sanitize.py || fail=1
 echo
 echo "== ws4 window counters (T6) =="
 $PY services/ws4-detection/test_window.py || fail=1
+echo
+echo "== ws4 v0.5 (A3): periodicity/beaconing window primitive (deque + redis-fake parity) =="
+$PY services/ws4-detection/test_window_periodic.py || fail=1
 echo
 echo "== ws4 boolean evaluator + alert id (T4/T7) =="
 $PY services/ws4-detection/test_engine_boolean.py || fail=1
@@ -94,6 +100,9 @@ $PY services/ws4-detection/test_v03_new_rules.py || fail=1
 echo
 echo "== ws4 v0.4 (P4): impossible-travel fires on REAL parser + enrichment output =="
 $PY services/ws4-detection/test_v04_new_rules.py || fail=1
+echo
+echo "== ws4 v0.5 (A3): common_beaconing.yml fires on regular cadence, not on irregular =="
+$PY services/ws4-detection/test_v05_beaconing.py || fail=1
 echo
 echo "== ws4 agent rule pack (PLAN_A P3 R1/R3/R4/R5): fire on REAL parser output =="
 $PY services/ws4-detection/test_v05_agent_rules.py || fail=1
