@@ -337,6 +337,24 @@ report a vulnerability.
 
 ---
 
+## Open core — what's free, what's paid
+
+**This repository is free and open source forever, under Apache-2.0.** Everything in it
+— the pipeline, every parser, every detection rule, the dashboard, the triage API, the
+generic and NIS2 report templates — is the complete product, not a crippled trial.
+
+There is a separate, closed companion product, **FENGARDE-Sec**, developed in a private
+repository: a paid layer for regulated deployments (legally-validated report content and
+model-assisted compliance tooling). It plugs into this repo only through one frozen,
+documented seam — the report-backend contract in
+[`contracts/reporting.md`](contracts/reporting.md) (`REPORT_BACKEND=http`). Nothing in
+this repo requires it, phones home to it, or degrades without it.
+
+Practically: features never move from this repo to the paid layer. New capability that
+fits the seam ships here open; only the regulated/legal content layer is paid.
+
+---
+
 ## License
 
 FENGARDE is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE).
