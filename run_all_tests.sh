@@ -40,6 +40,9 @@ echo
 echo "== M4.2 RBAC: users/sessions/roles (unit) =="
 $PY services/shared/test_rbac.py || fail=1
 echo
+echo "== session-store lifecycle (memory; redis half is opt-in via make test-live) =="
+$PY services/shared/test_sessions.py || fail=1
+echo
 echo "== M4.2 RBAC: login/logout/roles/tenant isolation (real HTTP) =="
 $PY services/ws3-indexer/test_rbac_api.py || fail=1
 echo

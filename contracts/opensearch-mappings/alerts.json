@@ -1,10 +1,9 @@
 {
   "index_patterns": ["alerts-*"],
-  "_comment": "Correlated/enriched alerts, 1-year ILM.",
   "template": {
-    "settings": { "number_of_shards": 1, "number_of_replicas": 1, "index.lifecycle.name": "alerts-365d" },
+    "settings": { "number_of_shards": 1, "number_of_replicas": 1 },
     "mappings": {
-      "_meta": { "mapping_version": 1 },
+      "_meta": { "mapping_version": 2, "_comment": "Correlated/enriched alerts, 1-year retention via ISM (ism-alerts-365d.json attaches by index pattern, not by a template setting)." },
       "dynamic": "false",
       "properties": {
         "alert_id": { "type": "keyword" },

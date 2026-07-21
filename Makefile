@@ -79,3 +79,4 @@ chaos:
 test-live:
 	@BUS_BACKEND=redis $(PYTHON) services/shared/test_runner.py
 	@$(PYTHON) services/ws3-indexer/storage/test_opensearch_live.py
+	@SESSION_TEST_REDIS=1 $(PYTHON) services/shared/test_sessions.py

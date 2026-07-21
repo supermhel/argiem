@@ -77,7 +77,7 @@ for _p in (str(_HERE), str(_HERE.parent)):
         sys.path.insert(0, _p)
 from shared.authz import check_api_key, warn_if_disabled  # noqa: E402
 from shared.rbac import role_at_least, can_access_tenant, LoginRateLimiter  # noqa: E402
-from shared.sessions import SessionStore  # noqa: E402
+from shared.sessions import SessionStore, make_session_store  # noqa: E402
 import reporting  # noqa: E402
 import rules_view  # noqa: E402
 import nis2_template  # noqa: E402
@@ -137,7 +137,10 @@ def make_handler(store, users_db=None, sessions: SessionStore | None = None,
     """
     rbac_enabled = users_db is not None
     if rbac_enabled:
-        sessions = sessions or SessionStore()
+        # make_session_store() honors FENGARDE_SESSION_BACKEND (memory default,
+        # redis for multi-replica) and fails loud if redis is asked for but
+        # unreachable -- see shared/sessions.py's module docstring.
+        sessions = sessions or make_session_store()
         rate_limiter = rate_limiter or LoginRateLimiter()
 
     # ThreadingHTTPServer runs one thread per connection. A triage update is a
