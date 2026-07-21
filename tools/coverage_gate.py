@@ -46,6 +46,10 @@ TARGETS: dict[str, tuple[str, list[str], float]] = {
             "parsers/test_n8n_audit.py",
             "parsers/test_active_directory.py",
             "parsers/test_plugins.py",
+            "parsers/test_dns_query.py",
+            "parsers/test_k8s_audit.py",
+            "parsers/test_cef.py",
+            "parsers/test_cloudtrail.py",
         ],
         88.0,  # measured 90% (2026-07-16); 2pt buffer, not the unmet-elsewhere 85% target
     ),

@@ -21,13 +21,18 @@ from .db_audit import DbAuditParser
 from .mcp_agent import McpAgentParser
 from .opcua_audit import OpcUaAuditParser
 from .n8n_audit import N8nAuditParser
+from .dns_query import DnsQueryParser
+from .k8s_audit import K8sAuditParser
+from .cef import CefParser
+from .cloudtrail import CloudTrailParser
 from .plugins import discover_plugin_parsers
 
 _REGISTRY: dict[str, Parser] = {
     p.SOURCE_TYPE: p
     for p in (CiscoAsaParser(), ActiveDirectoryParser(), VmwareVsphereParser(),
               LinuxSshParser(), GenericSyslogParser(), WindowsEventLogParser(),
-              DbAuditParser(), McpAgentParser(), OpcUaAuditParser(), N8nAuditParser())
+              DbAuditParser(), McpAgentParser(), OpcUaAuditParser(), N8nAuditParser(),
+              DnsQueryParser(), K8sAuditParser(), CefParser(), CloudTrailParser())
 }
 
 # M4.5: external pip packages can register additional parsers (docs/plugin-
@@ -77,6 +82,12 @@ def _resolve_structured(rec: dict) -> Optional[Parser]:
     # MCP/agent tool-call audit
     if "tool" in rec and ("arguments" in rec or "args" in rec):
         return _REGISTRY["mcp_agent"]
+    # k8s audit event: auditID is unique to the k8s audit-log schema.
+    if "auditID" in rec:
+        return _REGISTRY["k8s_audit"]
+    # AWS CloudTrail record: this exact field combo is CloudTrail-specific.
+    if "eventName" in rec and "eventSource" in rec and "eventTime" in rec:
+        return _REGISTRY["cloudtrail"]
     # eventType: OPC UA (CamelCase Audit*EventType) vs n8n (dotted lower-case)
     et = rec.get("eventType") or rec.get("event_type") or rec.get("type")
     if isinstance(et, str) and et:
@@ -128,10 +139,14 @@ def resolve(raw_payload: dict) -> Optional[Parser]:
     raw = raw_payload.get("raw")
     # Text-line sources (raw is a syslog string, not JSON).
     if isinstance(raw, str) and not raw.lstrip().startswith("{"):
+        if raw.startswith("CEF:"):
+            return _REGISTRY["cef"]
         if "%ASA-" in raw or "%ASA" in raw:
             return _REGISTRY["cisco_asa"]
         if "sshd[" in raw or "pam_unix(sshd:" in raw:
             return _REGISTRY["linux_ssh"]
+        if "query[" in raw and " from " in raw:
+            return _REGISTRY["dns_query"]
         return _REGISTRY["generic_syslog"]  # catch-all syslog is now reachable
     rec = _as_record(raw)
     if rec is None:

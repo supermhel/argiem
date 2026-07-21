@@ -8,17 +8,21 @@ detection rules. Update this file in the same PR as any parser or rule change.
 | class_uid | Class | Emitted by | Rules covering it |
 |---|---|---|---|
 | 1002 | Kernel/Process | generic_syslog, windows_eventlog (4688/4672) | common_after_hours_admin (4672 activity 2) |
-| 3002 | Authentication | linux_ssh, active_directory, windows_eventlog (4624/4634/4647), opcua_audit (v0.4 P2, session events), n8n_audit (v0.4 P3, login/logout — no dedicated rule yet) | common_bruteforce, common_lateral_movement, common_password_spray, common_impossible_travel (v0.4 P4), ot_new_engineering_connection |
-| 3003 | Account Change | windows_eventlog (4720/4722/4726/4728/4732, added v0.3) | common_priv_grant |
-| 4001 | Network Activity | cisco_asa | common_port_scan |
-| 6003 | API Activity | vmware_vsphere, mcp_agent (v0.4 P1), opcua_audit (v0.4 P2, write/method events), n8n_audit (v0.4 P3) | dc_mass_vm_delete, agent_credential_file_access, agent_tool_call_burst, agent_prompt_injection_indicator, ot_write_outside_maintenance, ot_config_change, n8n_new_webhook_exposed, n8n_workflow_modified_after_hours |
-| 6005 | Datastore Activity | db_audit (v0.3 — fixed the dormancy below) | bank_db_priv_esc |
+| 3002 | Authentication | linux_ssh, active_directory, windows_eventlog (4624/4634/4647), opcua_audit (v0.4 P2, session events), n8n_audit (v0.4 P3, login/logout — no dedicated rule yet), cef (v0.5, auth-shaped extension keys), cloudtrail (v0.5, ConsoleLogin) | common_bruteforce, common_lateral_movement, common_password_spray, common_impossible_travel (v0.4 P4), ot_new_engineering_connection, cloud_root_console_login (v0.5) |
+| 3003 | Account Change | windows_eventlog (4720/4722/4726/4728/4732, added v0.3) | common_priv_grant, common_rapid_account_lifecycle (v0.5) |
+| 4001 | Network Activity | cisco_asa, cef (v0.5, non-auth-shaped extension keys) | common_port_scan |
+| 4002 | DNS/HTTP Activity | dns_query (v0.5, first producer — closes the long-standing gap below) | common_dns_exfil (v0.5) |
+| 6003 | API Activity | vmware_vsphere, mcp_agent (v0.4 P1), opcua_audit (v0.4 P2, write/method events), n8n_audit (v0.4 P3), k8s_audit (v0.5, first k8s producer), cloudtrail (v0.5, non-ConsoleLogin management events) | dc_mass_vm_delete, agent_credential_file_access, agent_tool_call_burst, agent_prompt_injection_indicator, ot_write_outside_maintenance, ot_config_change, n8n_new_webhook_exposed, n8n_workflow_modified_after_hours, dc_privileged_container (v0.5) |
+| 6005 | Datastore Activity | db_audit (v0.3 — fixed the dormancy below) | bank_db_priv_esc, bank_mass_card_read (v0.5) |
 
 ## Gaps — classes with NO parser producer at all
 
+**~~4002 DNS/HTTP Activity~~ FIXED (v0.5):** `services/ws2-normalization/parsers/
+dns_query.py` (dnsmasq/BIND query-log lines) is the first class-4002 producer,
+un-dormanting `common_dns_exfil.yml`.
+
 | class_uid | Class | Would unlock |
 |---|---|---|
-| 4002 | DNS/HTTP Activity | DNS-exfil, beaconing rules — needs a DNS/proxy parser |
 | 1001 | File System Activity | file-integrity rules — needs an auditd/FIM parser |
 
 ## Gaps — classes WITH a producer but under-covered by rules
@@ -37,6 +41,7 @@ detection rules. Update this file in the same PR as any parser or rule change.
 |---|---|---|---|
 | common_bruteforce | class 3002, activity 4 (Failure) | yes (linux_ssh, active_directory) | ATT&CK T1110 / TA0006 |
 | common_password_spray | class 3002, activity 4, distinct src_endpoint.ip | yes (linux_ssh, active_directory) | ATT&CK T1110.003 / TA0006 |
+| common_bruteforce_sourceless | class 3002, activity 4, distinct actor.user.name per src_endpoint.hostname | yes (active_directory, added P0-2, 2026-07-21 audit fix plan) | ATT&CK T1110 / TA0006 |
 | common_lateral_movement | class 3002, activity 1, status Success, dst_endpoint.hostname | yes (windows_eventlog 4624) | ATT&CK T1021 / TA0008 |
 | common_port_scan | class 4001, activity 6 (Deny), dst_endpoint.port | yes (cisco_asa) | ATT&CK T1046 / TA0007 |
 | common_priv_grant | class 3003, activity 5 | yes (windows_eventlog 4728/4732) | ATT&CK T1098 / TA0003 |
@@ -54,6 +59,11 @@ detection rules. Update this file in the same PR as any parser or rule change.
 | ot_config_change | class 6003, unmapped.ot.is_config_node=true | yes (opcua_audit, added v0.4) | ATT&CK-ICS T0836 / TA0106 |
 | n8n_new_webhook_exposed | class 6003, activity 1, api.operation=webhook.created | yes (n8n_audit, added v0.4) | ATT&CK T1133 / TA0003 |
 | n8n_workflow_modified_after_hours | class 6003, siem.source_type=n8n_audit, time outside_hours | yes (n8n_audit, added v0.4) | ATT&CK T1078 / TA0004 |
+| common_dns_exfil | class 4002, activity 1, distinct dst_endpoint.hostname | yes (dns_query, added v0.5) | ATT&CK T1071.004 / TA0011 |
+| dc_privileged_container | class 6003, activity 1, siem.source_type=k8s_audit, unmapped.k8s.is_privileged=true | yes (k8s_audit, added v0.5) | ATT&CK T1610 / TA0002 |
+| cloud_root_console_login | class 3002, activity 1, siem.source_type=cloudtrail, unmapped.cloud.identity_type=Root, unmapped.cloud.mfa_used=No | yes (cloudtrail, added v0.5) | ATT&CK T1078.004 / TA0001 |
+| bank_mass_card_read | class 6005, activity 1, siem.sector=bank, distinct unmapped.db.object | yes (db_audit, object field added v0.5) | ATT&CK T1005 / TA0009 |
+| common_rapid_account_lifecycle | class 3003, activity in [1,4], group unmapped.target_user.name | yes (windows_eventlog 4720/4726) | ATT&CK T1136 / TA0003 |
 
 **C3 rule (v0.5):** MITRE tagging is a SHAPE-checked, honest-effort mapping
 (`tools/validate_rules.py`'s `mitre` block), not a claim of MITRE endorsement --
@@ -99,8 +109,20 @@ or a source-distinctive field if so.
 
 ## Next-highest-value additions (from the v0.3 plan, Track A)
 
-1. Extend `windows_eventlog.py` to 4720/4722/4726/4728/4732 → unlocks class 3003 → unlocks
-   password-spray-adjacent and account-lifecycle rules cheaply (parser already exists).
-2. A DB-audit parser to un-dormant `bank_db_priv_esc.yml` — currently the only shipped rule
-   with zero real producer.
-3. A DNS/proxy parser for class 4002.
+1. ~~Extend `windows_eventlog.py` to 4720/4722/4726/4728/4732~~ **DONE (v0.3)** — unlocked
+   class 3003, and v0.5's `common_rapid_account_lifecycle.yml` now uses it.
+2. ~~A DB-audit parser to un-dormant `bank_db_priv_esc.yml`~~ **DONE (v0.3)**; v0.5 also
+   added `unmapped.db.object` to the same parser to un-dormant `bank_mass_card_read.yml`.
+3. ~~A DNS/proxy parser for class 4002~~ **DONE (v0.5)** — `dns_query.py`, see above.
+
+**v0.5 (Track A4) additions**: `k8s_audit.py` (first k8s producer, class 6003) and
+`cloudtrail.py` (first cloud-control-plane producer, classes 3002/6003) — both new
+producers, both follow the same `siem.source_type` scoping discipline the previous
+paragraph describes (`dc_privileged_container.yml` scopes to `k8s_audit`,
+`cloud_root_console_login.yml` scopes to `cloudtrail`) since both share a class_uid
+with existing producers. `cef.py` deliberately ships with NO new rule of its own —
+its value is feeding the existing `common_bruteforce`/`common_port_scan` rules from
+any CEF-emitting appliance, a real but rule-count-invisible contribution.
+
+Remaining open items, not v0.5 scope: SNMP, NetFlow (binary format), and a
+class-1001 (File System Activity) auditd/FIM producer.

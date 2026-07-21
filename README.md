@@ -97,8 +97,8 @@ a long feature list.
 | Capability | Status | Notes |
 |---|---|---|
 | **Detection pipeline** (collect → normalize → detect → index → dashboard) | ✅ Works | End-to-end since v0.1 |
-| **Parsers (10)** | ✅ Works | Cisco ASA, Active Directory, VMware vSphere, Linux SSH, generic syslog, Windows Event Log (incl. account-change 4720/4722/4726/4728/4732), DB audit (GRANT/REVOKE/ALTER), MCP/AI-agent tool-call audit, OPC UA/OT audit, n8n automation-platform audit — all → OCSF |
-| **Detection rules (17)** | ✅ Works | Brute-force, port-scan, lateral-movement, password-spray, privileged-group grant, after-hours admin, impossible-travel, bank DB priv-esc, DC mass-VM-delete, agent credential-file access / tool-call burst / prompt-injection indicator, OT write-outside-maintenance / new-engineering-connection / config-change, n8n new-webhook-exposed / workflow-modified-after-hours |
+| **Parsers (14)** | ✅ Works | Cisco ASA, Active Directory, VMware vSphere, Linux SSH, generic syslog, Windows Event Log (incl. account-change 4720/4722/4726/4728/4732), DB audit (GRANT/REVOKE/ALTER), MCP/AI-agent tool-call audit, OPC UA/OT audit, n8n automation-platform audit, DNS query log, Kubernetes audit, CEF (generic appliance), AWS CloudTrail — all → OCSF |
+| **Detection rules (24)** | ✅ Works | Brute-force, port-scan, lateral-movement, password-spray, privileged-group grant, after-hours admin, impossible-travel, bank DB priv-esc, DC mass-VM-delete, agent credential-file access / tool-call burst / prompt-injection indicator / destructive-command / egress-non-allowlisted-domain, OT write-outside-maintenance / new-engineering-connection / config-change, n8n new-webhook-exposed / workflow-modified-after-hours, DNS exfil, privileged-container-create, cloud root console login, mass DB-object read, rapid account create/delete |
 | **Rule grammar** | ✅ Works | Boolean logic, comparison operators (`gt/gte/lt/lte/ne`), allowlist suppression (`not_in`, CIDR + exact), time-of-day (`outside_hours`) — all fail closed on malformed input |
 | **Rule prefilter** | ✅ Works | Rules bucketed by `class_uid` equality selection; events only evaluated against candidate rules (fixes the O(rules×events) scan) |
 | **Anti-dormancy guardrail** | ✅ Works | `tools/check_rule_producers.py` in the CI gate proves every rule's selections are satisfiable by values a real parser actually emits |
@@ -290,9 +290,9 @@ schema (OCSF).
 | WS | Service | Role | v0.1 status |
 |----|---------|------|-------------|
 | 1 | `services/ws1-collectors` | Collect logs → `raw.events` | ✅ |
-| 2 | `services/ws2-normalization` | Parsers → validated OCSF events | ✅ (10 parsers as of v0.4) |
+| 2 | `services/ws2-normalization` | Parsers → validated OCSF events | ✅ (14 parsers as of v0.5) |
 | 3 | `services/ws3-indexer` | Routing + OpenSearch indexing (idempotent) | ✅ |
-| 4 | `services/ws4-detection` | Correlation rules + scoring + windowing | ✅ (17 rules) |
+| 4 | `services/ws4-detection` | Correlation rules + scoring + windowing | ✅ (24 rules) |
 | 5 | `services/ws5-ai` | Triage | ✅ real local-LLM (Ollama) since v0.2, stub fallback |
 | 6 | `services/ws6-inventory` | IP/MAC inventory API (SQLite) | ✅ |
 | 7 | `services/ws7-dashboard` | Alert console | ✅ |

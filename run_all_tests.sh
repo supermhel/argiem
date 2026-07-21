@@ -67,6 +67,9 @@ echo
 echo "== shared envelope v1 (M1) =="
 $PY services/shared/test_envelope.py || fail=1
 echo
+echo "== shared ocsf helpers (P0-1: IPv4-mapped-IPv6 normalization) =="
+$PY services/shared/test_ocsf.py || fail=1
+echo
 echo "== ws2 property-based parser hardening (M1, Hypothesis) =="
 $PY services/ws2-normalization/parsers/test_property_hardening.py || fail=1
 echo
@@ -94,6 +97,9 @@ $PY services/ws4-detection/test_v04_new_rules.py || fail=1
 echo
 echo "== ws4 agent rule pack (PLAN_A P3 R1/R3/R4/R5): fire on REAL parser output =="
 $PY services/ws4-detection/test_v05_agent_rules.py || fail=1
+echo
+echo "== ws4 P0-2 (2026-07-21 audit): sourceless brute-force fires on REAL parser output =="
+$PY services/ws4-detection/test_p0_2_sourceless_bruteforce.py || fail=1
 echo
 echo "== ws4 v0.3 (A3): rule grammar (comparison ops + allowlist), fail-closed =="
 $PY services/ws4-detection/test_v03_rule_grammar.py || fail=1
@@ -149,6 +155,18 @@ $PY services/ws2-normalization/parsers/test_opcua_audit.py || fail=1
 echo
 echo "== ws2 parsers: n8n_audit (v0.4 P3, automation-platform rules) =="
 $PY services/ws2-normalization/parsers/test_n8n_audit.py || fail=1
+echo
+echo "== ws2 parsers: dns_query (v0.5 A4, un-dormants common_dns_exfil.yml) =="
+$PY services/ws2-normalization/parsers/test_dns_query.py || fail=1
+echo
+echo "== ws2 parsers: k8s_audit (v0.5 A4, un-dormants dc_privileged_container.yml) =="
+$PY services/ws2-normalization/parsers/test_k8s_audit.py || fail=1
+echo
+echo "== ws2 parsers: cef (v0.5 A4, feeds existing common_* rules from any CEF source) =="
+$PY services/ws2-normalization/parsers/test_cef.py || fail=1
+echo
+echo "== ws2 parsers: cloudtrail (v0.5 A4, un-dormants cloud_root_console_login.yml) =="
+$PY services/ws2-normalization/parsers/test_cloudtrail.py || fail=1
 echo
 echo "== ws5 ollama adapter + fallback (v0.2) =="
 $PY services/ws5-ai/test_llm_adapter.py || fail=1
