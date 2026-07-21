@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.5: closed the five disclosed post-M6 gaps + full Track X backlog)
+
+Live-verified on Docker Desktop where the gap required it; SSOT.md has the
+full evidence trail per item.
+
+- **ILM → ISM retention policies, live-verified**: rewrote the four
+  retention policies in real OpenSearch 2.13 ISM schema
+  (`contracts/opensearch-mappings/ism-*.json`, replacing the Elasticsearch-
+  syntax `ilm-policies.json` that never worked on this stack), rewired
+  `infra/provision.sh` to real idempotent PUTs. Also found and fixed a
+  second, older bug the same live run surfaced: `assets`/`events-bank`/
+  `events-dc`/`alerts` templates each had a top-level `_comment` field
+  OpenSearch's real `_index_template` PUT rejects outright — silently
+  masked forever by `curl -sf` swallowing the error. Only `events-common`
+  had ever actually installed on a live cluster before this fix.
+- **Redis-backed RBAC sessions**: `services/shared/sessions.py` gained
+  `RedisSessionStore` + a `make_session_store()` factory
+  (`FENGARDE_SESSION_BACKEND=memory|redis`, fails loud rather than
+  silently falling back — a session store is a security boundary).
+  Live-verified against Docker Desktop's real Redis.
+- **Live migrate/CAS verification**: `tools/migrate_opensearch.py`'s
+  plan/apply cycle now has a live test proving real template PUTs, zero
+  drift on a second `plan()`, and `mapping_version` round-tripping through
+  a real cluster — previously wire-format tested only.
+- **Open-core section in README** stating the free/paid split explicitly
+  (was previously only implicit in SSOT.md).
+- **B3 dual-backend test verified live** (was already built by prior work,
+  never live-confirmed): `BUS_BACKEND=redis test_runner.py` passed all six
+  parametrized bodies against Docker Desktop's real Redis.
+- **B4 rule hot-reload** (opt-in, `RULES_RELOAD_INTERVAL_S`, default off):
+  `Detector.reload()` atomically swaps in a freshly parsed rule set,
+  fail-closed on a malformed edit.
+- **C2 dashboard auto-refresh**: polls every 10s when data is live and the
+  tab is visible, skips the DOM rebuild when nothing changed (protects an
+  in-progress triage-note edit).
+- **C3 MITRE ATT&CK/ATT&CK-ICS/ATLAS coverage heatmap**: optional, shape-
+  validated `mitre: {tactic, technique}` block on rule YAML (24 of 25
+  rules tagged), propagated onto every alert, rendered as a new dashboard
+  "Coverage" tab. Surfaced and fixed two real, previously-undetected bugs
+  while live-verifying this: `rules_view.py`/`webhooks.py` computed their
+  `contracts/` path with container-incompatible math (GET /rules and
+  webhook config loading had returned nothing on every live deployment
+  since they shipped), and the dashboard's `getAlerts()` never mapped
+  `rule_id` through.
+- **Four new parser packs** (DNS query log, Kubernetes audit, CEF, AWS
+  CloudTrail) closing the long-standing class-4002 (DNS/HTTP Activity) gap
+  and adding the first Kubernetes and cloud-control-plane producers. Five
+  new rules ship with real producers: `common_dns_exfil`,
+  `dc_privileged_container`, `cloud_root_console_login`,
+  `bank_mass_card_read` (one additive field on the existing `db_audit.py`),
+  `common_rapid_account_lifecycle`.
+- **Periodicity/beaconing primitive**: `hit_periodic()` on both window
+  backends (coefficient of variation of inter-arrival deltas, reusing
+  existing window state — no new storage), wired into the rule grammar as
+  `siem.periodicity: {max_cv}`, and `common_beaconing.yml` — the design
+  item flagged "design-first" since the v0.3 plan.
+- **S7/PROFINET decision gate re-investigated**: found the original
+  "proprietary-shaped" deferral reasoning was too broad (S7-1500 ships a
+  real, public RFC 5424 syslog security-event feed) but the concrete event
+  vocabulary needed to parse it honestly is access-gated, not
+  undocumented — still deferred, now for an evidenced reason with a
+  concrete unblock path recorded.
+- **B5 HA design doc**: Redis Sentinel + OpenSearch multi-node
+  recommendation, decision only, no code — closes the last open Track X
+  item.
+
 ### Added (M3 remainder: dashboard session login + CSRF)
 
 Closes two items the M3 milestone had left genuinely open (verified by grep before
