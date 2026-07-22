@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import io
 import sys
-import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
