@@ -57,6 +57,26 @@ python_version = "3.11"
 ignore_missing_imports = true
 exclude = ["services/.*/mocks", "fixtures"]
 
+[tool.mutmut]
+# M2, PLAN_C Tier 2.3: mutation-testing gate, deliberately scoped narrow for
+# its FIRST pass rather than repo-wide (mutmut requires no prior footprint
+# here -- this is the honest starting baseline, not a target). Native Windows
+# mutmut isn't supported (upstream issue #397); run under WSL:
+#   wsl -e bash -lc "cd '<repo>' && python3 -m mutmut run"
+# Scope: services/shared/sessions.py only -- smallest, mypy-clean (see
+# [tool.mypy] above), highest security-relevance module in services/shared
+# (session tokens/CSRF/expiry -- a security boundary, per its own module
+# docstring). Each mutant re-runs the test command below, so scoping to one
+# file (not all 12 zero-infra test scripts in services/shared) keeps a single
+# `mutmut run` bounded to minutes, not hours, in this environment.
+# Informational in CI for now (see .github/workflows/ci.yml) -- same "measure
+# first, gate later" sequencing mypy went through, so a real number lands
+# before any pass/fail threshold is chosen.
+source_paths = ["services/shared/sessions.py"]
+do_not_mutate = ["*test_*.py"]
+pytest_add_cli_args_test_selection = ["tools/test_mutmut_shared.py"]
+also_copy = ["tools"]
+
 [tool.coverage.run]
 branch = true
 source = ["services"]

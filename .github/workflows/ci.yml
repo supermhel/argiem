@@ -107,6 +107,12 @@ jobs:
           done
       - name: coverage gate (WS-2/WS-3 core, blocking at measured baseline)
         run: python tools/coverage_gate.py
+      - name: mutmut (informational, non-blocking -- see pyproject.toml [tool.mutmut])
+        run: |
+          pip install mutmut
+          python -m mutmut run || true
+          python -m mutmut results || true
+          echo "mutmut survival rate is informational (pyproject.toml [tool.mutmut]) -- not blocking CI, same first-measurement sequencing mypy went through before it was flipped blocking"
       - name: SBOM freshness (blocking -- sbom.json must match requirements.txt)
         run: |
           pip install cyclonedx-bom
