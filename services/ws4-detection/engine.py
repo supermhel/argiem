@@ -457,10 +457,24 @@ class Rule:
         # fall back to a content hash rather than a shared "noingest" constant --
         # otherwise every ingest_id-less event of this rule collapses onto ONE alert
         # id and all but the first are silently deduped away downstream.
+        #
+        # P1-1 (2026-07-21 audit): this branch was missing the tenant namespacing
+        # the stateful branch above already has (the F1 follow-up). Two tenants
+        # whose ingest-less events hash to the same content fingerprint -- or,
+        # simpler, two tenants who happen to reuse the same ingest_id value --
+        # got the IDENTICAL alert_id; storage/opensearch.py's _search_alert()
+        # queries alerts-* by _id and returns the first match, so one tenant's
+        # alert could shadow (become unreachable behind) the other's. Same
+        # class of bug F1 fixed for the counter and its own follow-up fixed for
+        # the stateful id; this was the one spot it was missed. Always include
+        # tenant, matching the stateful branch's unconditional format (no
+        # special-casing "default" -- consistency matters more than a few
+        # bytes for the common single-tenant case).
+        tenant = (event.get("siem") or {}).get("tenant") or "default"
         ingest = (event.get("siem") or {}).get("ingest_id")
         if not ingest:
             ingest = "sha:" + _event_fingerprint(event)
-        return f"{self.id}:{ingest}"
+        return f"{self.id}:{tenant}:{ingest}"
 
     def evaluate(self, event: dict) -> bool:
         """Return True if this rule fires for the event (incl. stateful threshold)."""

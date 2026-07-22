@@ -7,10 +7,11 @@ detection rules. Update this file in the same PR as any parser or rule change.
 
 | class_uid | Class | Emitted by | Rules covering it |
 |---|---|---|---|
-| 1002 | Kernel/Process | generic_syslog, windows_eventlog (4688/4672) | common_after_hours_admin (4672 activity 2) |
-| 3002 | Authentication | linux_ssh, active_directory, windows_eventlog (4624/4634/4647), opcua_audit (v0.4 P2, session events), n8n_audit (v0.4 P3, login/logout — no dedicated rule yet), cef (v0.5, auth-shaped extension keys), cloudtrail (v0.5, ConsoleLogin) | common_bruteforce, common_lateral_movement, common_password_spray, common_impossible_travel (v0.4 P4), ot_new_engineering_connection, cloud_root_console_login (v0.5) |
+| 1001 | File System Activity | sysmon (P0-3, 2026-07-21 audit fix plan — first producer, closes the long-standing gap below; EventID 11 FileCreate) | none yet — see "under-covered" below |
+| 1002 | Kernel/Process | generic_syslog, windows_eventlog (4688/4672), sysmon (P0-3, EventID 1 ProcessCreate) | common_after_hours_admin (4672 activity 2) |
+| 3002 | Authentication | linux_ssh, active_directory, windows_eventlog (4624/4634/4647), opcua_audit (v0.4 P2, session events), n8n_audit (v0.4 P3, login/logout — no dedicated rule yet), cef (v0.5, auth-shaped extension keys), cloudtrail (v0.5, ConsoleLogin) | common_bruteforce, common_bruteforce_sourceless (P0-2, 2026-07-21 audit fix plan), common_lateral_movement, common_password_spray, common_impossible_travel (v0.4 P4), ot_new_engineering_connection, cloud_root_console_login (v0.5) |
 | 3003 | Account Change | windows_eventlog (4720/4722/4726/4728/4732, added v0.3) | common_priv_grant, common_rapid_account_lifecycle (v0.5) |
-| 4001 | Network Activity | cisco_asa, cef (v0.5, non-auth-shaped extension keys) | common_port_scan, common_beaconing (v0.5, periodicity primitive) |
+| 4001 | Network Activity | cisco_asa, cef (v0.5, non-auth-shaped extension keys), sysmon (P0-3, EventID 3 NetworkConnect, always activity 7/Accept) | common_port_scan, common_beaconing (v0.5, periodicity primitive) |
 | 4002 | DNS/HTTP Activity | dns_query (v0.5, first producer — closes the long-standing gap below) | common_dns_exfil (v0.5) |
 | 6003 | API Activity | vmware_vsphere, mcp_agent (v0.4 P1), opcua_audit (v0.4 P2, write/method events), n8n_audit (v0.4 P3), k8s_audit (v0.5, first k8s producer), cloudtrail (v0.5, non-ConsoleLogin management events) | dc_mass_vm_delete, agent_credential_file_access, agent_tool_call_burst, agent_prompt_injection_indicator, ot_write_outside_maintenance, ot_config_change, n8n_new_webhook_exposed, n8n_workflow_modified_after_hours, dc_privileged_container (v0.5) |
 | 6005 | Datastore Activity | db_audit (v0.3 — fixed the dormancy below) | bank_db_priv_esc, bank_mass_card_read (v0.5) |
@@ -21,15 +22,26 @@ detection rules. Update this file in the same PR as any parser or rule change.
 dns_query.py` (dnsmasq/BIND query-log lines) is the first class-4002 producer,
 un-dormanting `common_dns_exfil.yml`.
 
-| class_uid | Class | Would unlock |
-|---|---|---|
-| 1001 | File System Activity | file-integrity rules — needs an auditd/FIM parser |
+**~~1001 File System Activity~~ FIXED (P0-3, 2026-07-21 audit fix plan):**
+`services/ws2-normalization/parsers/sysmon.py` (EventID 11 FileCreate) is the
+first class-1001 producer. No rule consumes it yet — see "under-covered" below,
+this is now a rule gap, not a parser gap.
+
+(No remaining classes in Contract A's restricted profile have zero producers.)
 
 ## Gaps — classes WITH a producer but under-covered by rules
 
-- **1002 (Kernel/Process):** process-launch (4688, activity 1) anomaly detection
-  (suspicious binary path, unexpected parent) is unbuilt; only privilege-use (4672)
-  has a rule (after-hours admin, added v0.3).
+- **1001 (File System Activity, NEW, P0-3):** zero rules yet — the parser just
+  landed. Natural next rule: suspicious file-drop path (e.g. a process writing an
+  executable to a temp/startup directory) or distinct-file-write burst per host.
+- **1002 (Kernel/Process):** process-launch (4688/sysmon EventID 1, activity 1)
+  anomaly detection (suspicious binary path, unexpected parent) is unbuilt; only
+  privilege-use (4672) has a rule (after-hours admin, added v0.3).
+- **4001 (Network Activity, sysmon slice):** sysmon's EventID 3 producer feeds
+  `common_port_scan`/`common_beaconing` structurally (same class/activity shape
+  as cisco_asa), but neither rule has a dedicated fixture proving it fires on
+  sysmon-shaped events specifically — same class, unverified producer pairing,
+  tracked here rather than assumed.
 - **6005 (Datastore Activity):** ~~`bank_db_priv_esc.yml` referenced class 6005 with
   no producer — dormant on real data~~ **FIXED (v0.3):** `services/ws2-normalization/
   parsers/db_audit.py` added, a vendor-agnostic DB-audit parser emitting

@@ -2,7 +2,13 @@
 
 Consume normalized.events -> evaluate Sigma rules -> compute score (Contract D) ->
 set siem.score -> produce scored.events. On any rule match, emit an alert; when the
-score crosses the LLM threshold, enqueue to ai.requests (the buffered AI funnel).
+score crosses either funnel threshold (contracts/scoring.yaml), enqueue to
+ai.requests -- tier="llm" at >=llm_min (full LLM triage), tier="classifier" at
+>=classifier_min (WS-5's cheap layer-2 classifier only, no LLM call). Scores
+below classifier_min are indexed only (P1-2, 2026-07-21 audit: this second
+tier used to route nowhere -- scoring.yaml/sigma-convention.md promised it,
+detector.process() computed the "classifier" action correctly via
+Scorer.route(), but this file only ever checked action=="llm").
 """
 from __future__ import annotations
 
@@ -214,15 +220,22 @@ def detect_one(bus, detector: "Detector", event: dict) -> None:
     for rule in matched:
         alert = make_alert(event, rule, event["siem"]["score"])
         bus.produce("alerts", key=alert["alert_id"], payload=alert)
-    if action == "llm":
+    # P1-2 (2026-07-21 audit): scoring.yaml/sigma-convention.md promise a
+    # 20-59 "light classifier" band, but only action=="llm" (>=60) ever
+    # reached ai.requests -- the band was dead, scores 20-59 got indexed and
+    # never classified. `tier` tells WS-5 which layer to run: "llm" pays for
+    # a real model call; "classifier" runs only the cheap deterministic/ML
+    # classifier (classifier.py) -- never the LLM, or the whole point of a
+    # separate cheap tier is defeated.
+    if action in ("llm", "classifier"):
         bus.produce("ai.requests", key=event["siem"].get("ingest_id", key),
                     payload={"event_id": event["siem"].get("ingest_id"),
-                             "event": event,
+                             "event": event, "tier": action,
                              "reason": [r.title for r in matched]})
 
 
 def run(bus, detector: "Detector") -> dict:
-    stats = {"scored": 0, "alerts": 0, "ai_enqueued": 0}
+    stats = {"scored": 0, "alerts": 0, "ai_enqueued": 0, "classifier_enqueued": 0}
     for msg in bus.consume("normalized.events", group="cg-detect"):
         event, matched, action = detector.process(msg.payload)
         key = (event.get("src_endpoint") or {}).get("ip", "0.0.0.0")
@@ -232,12 +245,14 @@ def run(bus, detector: "Detector") -> dict:
             alert = make_alert(event, rule, event["siem"]["score"])
             bus.produce("alerts", key=alert["alert_id"], payload=alert)
             stats["alerts"] += 1
-        if action == "llm":
+        if action in ("llm", "classifier"):  # P1-2: see detect_one()'s comment
             bus.produce("ai.requests", key=event["siem"].get("ingest_id", key),
                         payload={"event_id": event["siem"].get("ingest_id"),
-                                 "event": event,
+                                 "event": event, "tier": action,
                                  "reason": [r.title for r in matched]})
             stats["ai_enqueued"] += 1
+            if action == "classifier":
+                stats["classifier_enqueued"] += 1
     return stats
 
 
@@ -268,10 +283,16 @@ def main():
         except Exception:  # redis missing/unreachable -> per-replica deque fallback
             pass
 
-    # One bus per produce; the runner gives each worker its own Bus, so the
-    # handler produces through a fresh Bus() rather than closing over one.
+    # P1-3 (2026-07-21 audit): ONE Bus() per worker, not one per event. Safe
+    # because runner.py's _topic_worker owns exactly one topic (WS-4 consumes
+    # only normalized.events) per thread and calls this handler serially on
+    # that single thread -- no cross-thread sharing to guard against.
+    # Constructing Bus() per event on the redis backend meant a fresh
+    # redis-py client (fresh TCP connect) per event.
+    handler_bus = Bus()
+
     def handler(payload: dict) -> None:
-        detect_one(Bus(), detector, payload)
+        detect_one(handler_bus, detector, payload)
 
     # P2.4: watch WS-4's own output topics for backpressure buildup (signal-only;
     # see start_depth_watchdog's docstring for why internal topics aren't trimmed).

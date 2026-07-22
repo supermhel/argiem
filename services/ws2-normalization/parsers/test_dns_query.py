@@ -47,6 +47,23 @@ class TestDnsQueryParser(unittest.TestCase):
     def test_non_string_raw_returns_none(self):
         self.assertIsNone(PARSER.parse(_raw({"not": "a string"})))
 
+    def test_malformed_ip_dropped_not_placed_on_event(self):
+        # 999.999.999.999 matches the loose capture regex (hex/dot/colon
+        # token) but isn't a real IPv4 address -- must be dropped, not
+        # placed straight into src_endpoint.ip (that would fail Contract
+        # A's endpoint pattern and dead-letter the whole event).
+        event = PARSER.parse(_raw(
+            "query[A] evil-c2.example.com from 999.999.999.999"))
+        self.assertIsNotNone(event)
+        self.assertNotIn("src_endpoint", event)
+        self.assertEqual(validate(event), [])
+
+    def test_malformed_ip_falls_back_to_meta_ip(self):
+        event = PARSER.parse(_raw(
+            "query[A] evil-c2.example.com from 999.999.999.999",
+            meta={"ip": "10.0.0.9"}))
+        self.assertEqual(event["src_endpoint"]["ip"], "10.0.0.9")
+
     def test_content_sniff_routes_query_line_to_dns_query(self):
         parser = resolve({"source_type": "", "raw":
                           "query[A] example.com from 10.0.0.5", "meta": {}})

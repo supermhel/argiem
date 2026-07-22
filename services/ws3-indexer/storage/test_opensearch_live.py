@@ -50,6 +50,12 @@ def _test_index_is_idempotent_upsert(store: OpenSearchStore, index: str):
     doc = {"n": 1, "msg": "first"}
     created = store.index(index, doc_id, doc)
     check(created is True, f"first index() of a new doc should report created=True, got {created}")
+    # P1-4 (2026-07-21 audit): count() hits _count, which only sees REFRESHED
+    # segments (OpenSearch's default refresh_interval is ~1s) -- this check
+    # had no settle wait at all before the persistent-connection rewrite
+    # made the round-trip fast enough to reliably race it. Explicit refresh,
+    # same pattern already used later in this file.
+    store._request("POST", f"/{index}/_refresh")
     check(store.count(index) >= 1, "count() should see the just-indexed doc")
 
     # Re-index the SAME id with different content: must UPDATE in place, not
@@ -181,6 +187,38 @@ def _test_permanent_error_not_retried(store: OpenSearchStore):
         check(400 <= exc.code < 500, f"expected a 4xx, got {exc.code}")
 
 
+def _test_bulk_index_round_trips(store: OpenSearchStore, index: str = "events-bulktest"):
+    """P1-4 (2026-07-21 audit): the real /_bulk NDJSON path against a live
+    cluster -- the fake-transport unit test (test_opensearch_retry.py) can
+    only prove the request is CONSTRUCTED correctly, not that OpenSearch
+    actually indexes every item and reports per-item status the way
+    bulk_index()'s result-parsing expects."""
+    n = 25
+    items = [(index, f"bulk-{uuid.uuid4()}", {"n": i, "msg": f"bulk item {i}"})
+            for i in range(n)]
+    result = store.bulk_index(items)
+    check(result["indexed"] == n,
+          f"bulk_index should report all {n} items indexed, got {result}")
+    check(result["errors"] == [], f"no items should error, got {result['errors']}")
+
+    store._request("POST", f"/{index}/_refresh")
+    check(store.count(index) >= n,
+          f"count() should see all {n} bulk-indexed docs, got {store.count(index)}")
+
+    check(store.bulk_index([]) == {"indexed": 0, "errors": []},
+          "bulk_index([]) must be a safe zero-op, not an HTTP call")
+
+    # Persistent-connection reuse (the other half of P1-4): the same
+    # connection object must survive across an index() call, a bulk_index()
+    # call, and a count() call -- i.e. it's genuinely being reused, not
+    # silently reconnecting every time (which would still pass functionally
+    # but defeat the point of this fix).
+    conn_before = store._conn
+    store.index(index, f"single-{uuid.uuid4()}", {"n": 999})
+    check(store._conn is conn_before,
+          "the HTTP connection must be REUSED across calls, not reopened each time")
+
+
 def main() -> None:
     url = os.getenv("OPENSEARCH_URL", "http://localhost:9200")
     if not _reachable(url):
@@ -195,6 +233,7 @@ def main() -> None:
     _test_permanent_error_not_retried(store)
     _test_migrate_live(store)
     _test_ism_policies_install_and_attach(store)
+    _test_bulk_index_round_trips(store)
 
     if FAILS:
         print(f"\n[FAIL] opensearch live: {len(FAILS)} problem(s)")

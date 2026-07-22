@@ -33,6 +33,9 @@ echo
 echo "== ws3 (P1.3): OpenSearch index transient-retry / permanent-surface =="
 $PY services/ws3-indexer/test_opensearch_retry.py || fail=1
 echo
+echo "== ws3 P1-4 (2026-07-21 audit): OpenSearch _bulk API (NDJSON, partial-failure parsing) =="
+$PY services/ws3-indexer/test_bulk_index.py || fail=1
+echo
 echo "== v0.4 (S1): opt-in API-key auth (ws3 triage, ws6 inventory) =="
 $PY services/ws3-indexer/test_auth.py || fail=1
 $PY services/ws6-inventory/test_auth.py || fail=1
@@ -73,6 +76,18 @@ echo
 echo "== shared bus trim_acked (P0-5: acked-stream reaper; RedisBus half is opt-in via make test-live) =="
 $PY services/shared/test_bus_trim_acked.py || fail=1
 echo
+echo "== shared bus lag (P1-7: real backlog signal; RedisBus half is opt-in via make test-live) =="
+$PY services/shared/test_bus_lag.py || fail=1
+echo
+echo "== shared bus read count (P1-8: XREADGROUP batch size; RedisBus-only, opt-in via make test-live) =="
+$PY services/shared/test_bus_read_count.py || fail=1
+echo
+echo "== shared log level gate (P2-3, 2026-07-21 audit) =="
+$PY services/shared/test_log.py || fail=1
+echo
+echo "== shared runner traceback throttle (P2-4, 2026-07-21 audit) =="
+$PY services/shared/test_runner_throttle.py || fail=1
+echo
 echo "== ws2 property-based parser hardening (M1, Hypothesis) =="
 $PY services/ws2-normalization/parsers/test_property_hardening.py || fail=1
 echo
@@ -85,11 +100,20 @@ echo
 echo "== ws4 v0.5 (A3): periodicity/beaconing window primitive (deque + redis-fake parity) =="
 $PY services/ws4-detection/test_window_periodic.py || fail=1
 echo
+echo "== ws4 P1-5 (2026-07-21 audit): window dedup O(1) not O(n) (perf regression trip-wire) =="
+$PY services/ws4-detection/test_window_perf.py || fail=1
+echo
 echo "== ws4 boolean evaluator + alert id (T4/T7) =="
 $PY services/ws4-detection/test_engine_boolean.py || fail=1
 echo
 echo "== ws4 P0 hardening: time-guard (poison/future) + alert-id collapse =="
 $PY services/ws4-detection/test_engine_hardening.py || fail=1
+echo
+echo "== ws4 P1-1 (2026-07-21 audit): non-stateful alert_key tenant isolation =="
+$PY services/ws4-detection/test_p1_1_alert_key_tenant.py || fail=1
+echo
+echo "== ws4/ws5 P1-2 (2026-07-21 audit): 20-59 classifier band now routes to WS-5 =="
+$PY services/ws4-detection/test_p1_2_classifier_band.py || fail=1
 echo
 echo "== ws4 distinct-count window + port-scan/lateral-movement rules (v0.2) =="
 $PY services/ws4-detection/test_window_distinct.py || fail=1
@@ -177,11 +201,17 @@ echo
 echo "== ws2 parsers: cloudtrail (v0.5 A4, un-dormants cloud_root_console_login.yml) =="
 $PY services/ws2-normalization/parsers/test_cloudtrail.py || fail=1
 echo
+echo "== ws2 parsers: sysmon (P0-3, 2026-07-21 audit: first class-1001 producer) =="
+$PY services/ws2-normalization/parsers/test_sysmon.py || fail=1
+echo
 echo "== ws5 ollama adapter + fallback (v0.2) =="
 $PY services/ws5-ai/test_llm_adapter.py || fail=1
 echo
 echo "== ws1 syslog UDP listener (v0.2) =="
 $PY services/ws1-collectors/test_syslog_udp.py || fail=1
+echo
+echo "== ws1 P1-6 (2026-07-21 audit): spool drain O(n) + lock released across produce() =="
+$PY services/ws1-collectors/test_spool_perf.py || fail=1
 echo
 echo "== integration e2e (WS-1->2->4->3) =="
 $PY tools/integration_e2e.py || fail=1
@@ -215,6 +245,9 @@ $PY eval/report_generator/run_eval.py || fail=1
 echo
 echo "== M5 demo: bank-DB priv-esc -> real alert -> German NIS2 draft, zero infra =="
 $PY tools/demo_nis2.py || fail=1
+echo
+echo "== P3-2 (2026-07-21 audit): declared ATT&CK/ATLAS coverage scorecard =="
+$PY eval/attack/test_coverage_layer.py || fail=1
 
 echo
 if [ "$fail" -eq 0 ]; then echo "ALL TESTS PASS"; else echo "SOME TESTS FAILED"; fi

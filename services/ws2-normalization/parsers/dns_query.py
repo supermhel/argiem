@@ -25,6 +25,7 @@ import time
 from typing import Optional
 
 from .base import Parser, SEV_INFO
+from shared.ocsf import valid_ip
 
 _CLASS = 4002  # DNS / HTTP Activity
 
@@ -52,6 +53,16 @@ class DnsQueryParser(Parser):
         if not name:
             return None
 
+        # The regex captures a loose hex/dot/colon token so a malformed address
+        # still matches the line (we keep the query, don't drop the whole
+        # event); the address itself is validated here and dropped if it
+        # isn't a real IP, same discipline as every other parser in this repo
+        # (linux_ssh.py's _valid_ip, cef.py/k8s_audit.py/cloudtrail.py's
+        # shared.ocsf.valid_ip) -- an invalid IP placed straight into
+        # src_endpoint.ip would fail Contract A's endpoint pattern and
+        # dead-letter the whole event.
+        ip = valid_ip(m.group("ip")) or meta.get("ip")
+
         event = self.base_event(
             class_uid=_CLASS,
             activity_id=1,
@@ -62,7 +73,8 @@ class DnsQueryParser(Parser):
             meta=meta,
             sector=self.resolve_sector(meta),
         )
-        event["src_endpoint"] = {"ip": m.group("ip")}
+        if ip:
+            event["src_endpoint"] = {"ip": ip}
         event["dst_endpoint"] = {"hostname": name}
         return event
 

@@ -25,6 +25,7 @@ from .dns_query import DnsQueryParser
 from .k8s_audit import K8sAuditParser
 from .cef import CefParser
 from .cloudtrail import CloudTrailParser
+from .sysmon import SysmonParser
 from .plugins import discover_plugin_parsers
 
 _REGISTRY: dict[str, Parser] = {
@@ -32,7 +33,8 @@ _REGISTRY: dict[str, Parser] = {
     for p in (CiscoAsaParser(), ActiveDirectoryParser(), VmwareVsphereParser(),
               LinuxSshParser(), GenericSyslogParser(), WindowsEventLogParser(),
               DbAuditParser(), McpAgentParser(), OpcUaAuditParser(), N8nAuditParser(),
-              DnsQueryParser(), K8sAuditParser(), CefParser(), CloudTrailParser())
+              DnsQueryParser(), K8sAuditParser(), CefParser(), CloudTrailParser(),
+              SysmonParser())
 }
 
 # M4.5: external pip packages can register additional parsers (docs/plugin-
@@ -52,6 +54,13 @@ def get_parser(source_type: str) -> Optional[Parser]:
 # superset producer). Previously ANY "EventID" substring routed to AD, so a
 # windows-only 4688/4720/... hit AD, returned None, and was dropped.
 _AD_EVENTIDS = {4624, 4634, 4647, 4625, 4768, 4771}
+# P0-3: Sysmon (Microsoft-Windows-Sysmon/Operational) uses the SAME "EventID"
+# field name as the Security channel but a disjoint, low-numbered ID space
+# (1-29ish vs. Security's 4-thousand range) -- no numeric collision with
+# _AD_EVENTIDS or windows_eventlog._EVENT_MAP. Checked explicitly (not left to
+# the windows_eventlog fallback) so a sysmon.py-shaped payload without an
+# explicit source_type doesn't silently dead-letter through the wrong parser.
+_SYSMON_EVENTIDS = {1, 3, 11}
 # operation verbs unique to each of the two class-sharing "operation" parsers.
 # Shared verbs (delete/update) are deliberately absent -- a bare "delete" with no
 # discriminating field is genuinely ambiguous and must NOT be silently guessed.
@@ -108,6 +117,8 @@ def _resolve_structured(rec: dict) -> Optional[Parser]:
         if eid_i is not None:
             if eid_i in _AD_EVENTIDS:
                 return _REGISTRY["active_directory"]
+            if eid_i in _SYSMON_EVENTIDS:
+                return _REGISTRY["sysmon"]
             return _REGISTRY["windows_eventlog"]  # superset; None -> honest DLQ
     # DB audit vs vSphere (both class-share on "operation") by verb + fields
     if "operation" in rec:

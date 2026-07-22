@@ -117,6 +117,18 @@ class DequeWindowCounter:
     def __init__(self) -> None:
         self._w: dict[str, deque] = defaultdict(deque)
         self._dw: dict[str, deque] = defaultdict(deque)
+        # P1-5 (2026-07-21 audit): mirrors _w's non-None members for O(1)
+        # dedup lookup. Live-proven finding: `any(m == member for _, m in w)`
+        # was an O(window-size) scan on EVERY hit, making a single-source
+        # burst -- the exact traffic common_bruteforce.yml targets -- O(n^2)
+        # over the burst (e.g. ~60k comparisons/event at 1k EPS into a 60s
+        # window), collapsing detection throughput under real attack load.
+        # Invariant this set relies on: because hit() already skips
+        # re-appending an already-live member, a given non-None member value
+        # appears in `_w[key]` AT MOST ONCE at any time -- so popping an
+        # entry's member out of this set on eviction is always safe (it
+        # cannot still be "live" via a second deque entry).
+        self._live_members: dict[str, set] = defaultdict(set)
         self._last: dict[str, int] = {}   # key -> most-recent now_ms (for sweeping)
         self._hits = 0
 
@@ -130,22 +142,30 @@ class DequeWindowCounter:
         for k in stale:
             self._w.pop(k, None)
             self._dw.pop(k, None)
+            self._live_members.pop(k, None)
             self._last.pop(k, None)
 
     def hit(self, key: str, now_ms: int, window_ms: int, member=None) -> int:
         w = self._w[key]
+        members = self._live_members[key]
         horizon = now_ms - window_ms
         while w and w[0][0] < horizon:
-            w.popleft()
+            _, evicted_member = w.popleft()
+            if evicted_member is not None:
+                members.discard(evicted_member)
         # Redelivery guard: a member already alive in the window counts once.
-        if member is not None and any(m == member for _, m in w):
+        # O(1) via the mirrored set, was O(window-size) via a deque scan.
+        if member is not None and member in members:
             count = len(w)
         else:
             w.append((now_ms, member))
+            if member is not None:
+                members.add(member)
             count = len(w)
         self._last[key] = now_ms
         if not w:
             self._w.pop(key, None)
+            self._live_members.pop(key, None)
             self._last.pop(key, None)
         self._sweep(now_ms, window_ms)
         return count

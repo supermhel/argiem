@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (post-merge CI hardening, PR#2 → `main`)
+
+- **CodeQL's first-ever live scan (2026-07-18/19)** found 5 HIGH alerts, all fixed at
+  the design level, zero dismissed: `tenant_id` path-injection in `rules_view.py`
+  closed by never letting request data into a path expression (trusted-dir glob +
+  stem match); the RBAC first-boot admin password redesigned to operator-supplied
+  via `FENGARDE_ADMIN_PASSWORD` (the service never generates/logs/stores plaintext;
+  unset + empty store now fails closed with a loud warning). Open CodeQL alert count
+  on `main`: 0.
+- **Three new CI gates**: `pip-audit` (CVE audit of every pinned `requirements.txt`,
+  the deliberate replacement for disabled Dependabot), `docker-build` (all 8 images
+  must build — nothing previously proved this in CI), `actionlint` (lints the
+  workflows themselves; immediately caught a real dead-var in the mypy step).
+- **Supply-chain pinning**: every workflow `uses:` SHA-pinned, all 8 Docker base
+  images digest-pinned, least-privilege `permissions:` on every workflow — Scorecard
+  alerts 54→19. The remaining 19 are accepted, not open work (11 want full
+  transitive pip *hash*-pinning, declined as maintenance-disproportionate given
+  version-pins + the pip-audit gate; 8 are practice/settings-level signals that
+  accrue with repo history or are an explicit choice — Dependabot's own removal
+  below is one of them).
+- **Dependabot removed** (`.github/dependabot.yml`) in favor of `pip-audit`'s
+  CVE-driven gate — a deliberate choice, not an oversight; see the pinning note above.
+- Fixed since PR#2 landed red: ruff `F401` in `runner.py`; `ossf/scorecard-action@v2`
+  pinned to `v2.4.3` (no such floating tag existed); `quality` job missing
+  `hypothesis`; the coverage gate's hand-synced test list re-synced post-merge.
+
 ### Added (v0.5: closed the five disclosed post-M6 gaps + full Track X backlog)
 
 Live-verified on Docker Desktop where the gap required it; SSOT.md has the
@@ -105,6 +131,51 @@ in `services/ws7-dashboard/` actually called it, and CSRF protection didn't exis
   Verified end-to-end in a real browser: login → write → reload persists; a wrong
   token 403s; logout invalidates the session and re-locks the app.
 
+### Added (M5 — NIS2 public template layer)
+
+- **NIS2/§32 BSIG incident-report generator** (`services/ws3-indexer/nis2_template.py`,
+  `contracts/nis2-de-schema.json`) — deterministic German/English draft generator for
+  the Art. 23 / §32 BSIG notification, additive on the existing
+  `POST/GET /alerts/{id}/report` route via `?template=nis2`. Zero LLM, zero paid
+  dependency — every draft states its own NIS2-vs-DORA scope caveat inline
+  (financial entities are typically DORA-governed, not NIS2) and carries the same
+  mandatory `status: "draft"` + disclaimer discipline as the generic report backend.
+  The paid, legally-validated layer stays `fengarde-sec`'s, via the unmodified
+  `REPORT_BACKEND=http` seam. `docs/nis2-report-generator.md` has the full scope/limits.
+  Dashboard gained a "Rapport (NIS2)" option alongside the existing generic report
+  button. Live-verified: a real bank-DB privilege-escalation alert through to a real
+  German NIS2 draft, zero infra, zero manual steps (see `make nis2-demo`).
+
+### Added (M4 — MSP-grade)
+
+- **Multi-tenancy**: tenant-scoped OpenSearch indices, per-tenant rule enablement
+  (`contracts/tenants/<id>.yml`), `siem.tenant` (Envelope v1) as the isolation key
+  end-to-end. `tools/test_multi_tenant_isolation.py`.
+- **RBAC**: opt-in (`FENGARDE_RBAC_DB`) — SQLite user store with scrypt password
+  hashing, session cookies, role enforcement (`services/shared/{users,sessions,rbac}.py`).
+  Off by default; every pre-existing deployment is byte-for-byte unaffected.
+- **Versioned REST API**: `contracts/triage-api.yaml` (OpenAPI 3.1) formalizes
+  `/api/v1/...` alongside the unchanged bare paths — spec-vs-code drift is
+  CI-tested (`test_api_v1.py`).
+- **Outbound HMAC-signed webhooks**: `contracts/webhooks/`,
+  `services/ws3-indexer/webhooks.py` — per-tenant/per-score-threshold alert delivery
+  with signature verification, retry policy, and its own consumer group (`cg-webhook`)
+  so a slow/down receiver never delays indexing.
+- **Entry-points parser/rule plugin interface**: `docs/plugin-development.md` — an
+  external pip package can register additional parsers/rule packs via
+  `fengarde.parsers`/`fengarde.rule_packs` entry points, never overriding a built-in.
+- **Ops lifecycle**: `services/shared/users.py` schema migration via
+  `PRAGMA user_version`, `tools/backup.py`/`restore.py`, `tools/migrate_opensearch.py`
+  (versioned, diffable index-template migration), `services/shared/diskguard.py`
+  (free-space guardrails for the spool/backup paths).
+- **Disclosed while building this, not hidden**: OpenSearch ILM/retention policies
+  were never actually installable on a live cluster — `contracts/opensearch-mappings/
+  ilm-policies.json` is written in Elasticsearch ILM syntax, but this stack runs
+  OpenSearch's ISM plugin, a different schema at a different endpoint. Everything
+  else in M4 is real and tested; this pre-existing issue surfaced during the
+  versioned-index-mappings work and was tracked, not silently worked around (later
+  actually fixed — see the ISM rewrite entry earlier in this file).
+
 ### Fixed (adversarial repo-wide bug hunt, post-M4/M5)
 
 A repo-wide (not PR-only) reviewer/bug-hunter pass over the M4/M5 surface, each finding
@@ -166,7 +237,7 @@ New/extended tests: `services/ws3-indexer/test_router.py`, `services/ws4-detecti
 ### Added (v0.5 M1 — correctness gates)
 
 - **Envelope v1**: `schema_version`, `trace_id`, `tenant_id` (formalizes `siem.tenant`, declared since Phase 0 but never wired), documented `event_time`/`ingest_time`/dedup-key semantics. Additive bus-schema change to `contracts/bus-topics.md` + `contracts/ocsf-event.schema.json`, owner-authorized. `services/shared/envelope.py`; wired through all 10 parsers via `base_event(meta=...)` and all 4 live WS-1 collectors.
-- **`make chaos`** (`tools/chaos_test.py`): kills each of ws1-ws5 mid-replay across 40 independent brute-force scenarios, asserts zero lost/duplicate alerts. Reviewed, not yet run against live Docker (unavailable in the authoring environment) — do not treat as a passed gate until a real run's output lands in a PR.
+- **`make chaos`** (`tools/chaos_test.py`): kills each of ws1-ws5 mid-replay across 40 independent brute-force scenarios, asserts zero lost/duplicate alerts. **Live-verified 2026-07-18** on a fresh Docker stack: `scenarios=40 lost=0 duplicated=0`, all 5 pipeline services SIGKILLed mid-replay — a genuine passing gate, not just reviewed (took 4 real harness-bug fixes across 4 runs to get an honest verdict; see SSOT.md §2 for the full history).
 - **`docs/degradation-matrix.md`**: every dependency's down-behavior, sourced from the actual fail-open/fail-closed code paths.
 - **Hypothesis property tests** (`parsers/test_property_hardening.py`): 100 generated examples per parser, all 10 pass. Found and fixed a real bug: 6 structured-record parsers (db_audit, mcp_agent, n8n_audit, opcua_audit, vmware_vsphere, windows_eventlog) assigned unguarded JSON-field values into schema-constrained `ip`/`mac`/hostname/name fields; `services/shared/ocsf.py` gains `valid_ip`/`valid_mac`/`safe_str` to fix all six.
 - **Log-injection defense** (`services/shared/sanitize.py`): strips ANSI escapes (blocks terminal/OSC-52 injection when viewing raw event content) and C0/DEL control chars (blocks newline-based log forging), wired into `normalize_one()` as a new sanitize stage between parse and enrich.
