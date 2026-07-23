@@ -210,6 +210,9 @@ echo
 echo "== ws2 parsers: sysmon (P0-3, 2026-07-21 audit: first class-1001 producer) =="
 $PY services/ws2-normalization/parsers/test_sysmon.py || fail=1
 echo
+echo "== ws2 parsers: modbus_anomaly (M7 Track X, 2026-07-22: OT protocol-anomaly detector, not a vendor-log parser -- un-dormants ot_modbus_unauthorized_write.yml) =="
+$PY services/ws2-normalization/parsers/test_modbus_anomaly.py || fail=1
+echo
 echo "== ws5 ollama adapter + fallback (v0.2) =="
 $PY services/ws5-ai/test_llm_adapter.py || fail=1
 echo
